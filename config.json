@@ -3,11 +3,5 @@
         "host": "0.0.0.0",
         "port": 5000,
         "debug": false
-    },
-    "audio": {
-        "sample_rate": 48000,
-        "channels": 2,
-        "bitrate": 128000,
-        "chunk_size": 512
     }
 }

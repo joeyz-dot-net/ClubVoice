@@ -103,8 +103,9 @@ class DeviceManager:
         Returns:
             最佳设备的序号 (1-based)，如果没有找到返回 None
         """
-        target_sample_rate = config.audio.sample_rate  # 48000
-        target_channels = config.audio.channels  # 2
+        # 目标参数：优先选择 48kHz 立体声
+        target_sample_rate = 48000
+        target_channels = 2
         keyword = 'CABLE OUTPUT' if is_input else 'CABLE INPUT'
         
         best_idx = None
@@ -140,12 +141,13 @@ class DeviceManager:
         
         return best_idx
     
-    def interactive_select(self) -> Tuple[int, int, int, int]:
+    def interactive_select(self) -> Tuple[int, int, int, int, int, int, int]:
         """
         交互式选择设备
         
         Returns:
-            (input_device_id, output_device_id, sample_rate, channels)
+            (input_device_id, output_device_id, input_sample_rate, output_sample_rate, 
+             input_channels, output_channels, browser_sample_rate)
         """
         console.print()
         self.display_devices()
@@ -186,32 +188,47 @@ class DeviceManager:
         )
         selected_output = self.output_devices[output_choice - 1]
         
-        # 使用配置文件中的采样率（如果设备支持），否则使用设备支持的最高采样率
-        target_sample_rate = config.audio.sample_rate
-        if selected_input['sample_rate'] >= target_sample_rate and selected_output['sample_rate'] >= target_sample_rate:
-            sample_rate = target_sample_rate
-        else:
-            sample_rate = min(selected_input['sample_rate'], selected_output['sample_rate'])
+        # 各设备使用各自的采样率
+        input_sample_rate = selected_input['sample_rate']
+        output_sample_rate = selected_output['sample_rate']
         
-        # 使用配置文件中的声道数（如果设备支持）
-        target_channels = config.audio.channels
-        max_channels = min(selected_input['channels'], selected_output['channels'])
-        channels = target_channels if max_channels >= target_channels else max_channels
+        # 浏览器端使用 48kHz
+        browser_sample_rate = 48000
+        
+        # 输入输出设备可以有不同的声道数
+        input_channels = selected_input['channels']
+        output_channels = selected_output['channels']
+        
+        # 浏览器端始终使用立体声
+        browser_channels = 2
+        
+        # 更新全局配置以匹配设备参数
+        config.audio.sample_rate = browser_sample_rate
+        config.audio.input_sample_rate = input_sample_rate
+        config.audio.output_sample_rate = output_sample_rate
+        config.audio.channels = browser_channels
+        config.audio.input_channels = input_channels
+        config.audio.output_channels = output_channels
+        config.audio.input_device_id = selected_input['id']
+        config.audio.output_device_id = selected_output['id']
         
         console.print()
         console.print(Panel(
             f"[green]✓ 输入设备:[/green] {selected_input['name']}\n"
+            f"    {input_channels}ch @ {input_sample_rate}Hz\n"
             f"[green]✓ 输出设备:[/green] {selected_output['name']}\n"
-            f"[green]✓ 采样率:[/green] {sample_rate} Hz\n"
-            f"[green]✓ 声道:[/green] {'立体声' if channels == 2 else '单声道'}",
-            title="设备配置确认",
+            f"    {output_channels}ch @ {output_sample_rate}Hz\n"
+            f"[green]✓ 浏览器:[/green] {browser_channels}ch @ {browser_sample_rate}Hz",
+            title="设备配置确认 (自动转换采样率和声道)",
             border_style="green"
         ))
         
         if not Confirm.ask("确认使用以上配置?", default=True):
             return self.interactive_select()
         
-        return selected_input['id'], selected_output['id'], sample_rate, channels
+        return (selected_input['id'], selected_output['id'], 
+                input_sample_rate, output_sample_rate,
+                input_channels, output_channels, browser_sample_rate)
     
     def validate_device(self, device_id: int, is_input: bool = True) -> bool:
         """验证设备可用性"""

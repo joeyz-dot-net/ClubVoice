@@ -44,12 +44,16 @@ def main():
         bootstrap = Bootstrap()
         audio_config = bootstrap.run()
         
-        # 创建音频桥接器
+        # 创建音频桥接器 - 支持不同采样率和声道数的输入输出设备
         bridge = VBCableBridge(
             input_device_id=audio_config.input_device_id,
             output_device_id=audio_config.output_device_id,
-            sample_rate=audio_config.sample_rate,
-            channels=audio_config.channels,
+            browser_sample_rate=audio_config.sample_rate,
+            input_sample_rate=audio_config.input_sample_rate,
+            output_sample_rate=audio_config.output_sample_rate,
+            input_channels=audio_config.input_channels,
+            output_channels=audio_config.output_channels,
+            browser_channels=audio_config.channels,
             chunk_size=audio_config.chunk_size
         )
         
@@ -80,7 +84,14 @@ def main():
     except KeyboardInterrupt:
         signal_handler(None, None)
     except Exception as e:
-        console.print(f"[red]启动失败: {e}[/red]")
+        console.print(f"\n[bold red]{'=' * 50}[/bold red]")
+        console.print(f"[bold red]程序错误[/bold red]")
+        console.print(f"[bold red]{'=' * 50}[/bold red]")
+        console.print(f"[red]错误类型: {type(e).__name__}[/red]")
+        console.print(f"[red]错误信息: {e}[/red]")
+        console.print()
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise
 
 

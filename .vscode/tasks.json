@@ -4,11 +4,7 @@
         {
             "label": "Build EXE",
             "type": "shell",
-            "command": "pyinstaller",
-            "args": [
-                "VoiceCommunicationApp.spec",
-                "-y"
-            ],
+            "command": "pyinstaller VoiceCommunicationApp.spec -y; Write-Host ''; Write-Host '构建完成!' -ForegroundColor Green; Read-Host '按 Enter 键关闭窗口'",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -27,7 +23,7 @@
         {
             "label": "Build and Copy Config",
             "type": "shell",
-            "command": "pyinstaller VoiceCommunicationApp.spec -y; Copy-Item config.json dist\\",
+            "command": "pyinstaller VoiceCommunicationApp.spec -y; Copy-Item config.json dist\\; Write-Host ''; Write-Host '构建完成!' -ForegroundColor Green; Read-Host '按 Enter 键关闭窗口'",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -91,7 +87,7 @@
         {
             "label": "Full Build",
             "type": "shell",
-            "command": "Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue; pyinstaller VoiceCommunicationApp.spec -y; Copy-Item config.json dist\\",
+            "command": "Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue; pyinstaller VoiceCommunicationApp.spec -y; Copy-Item config.json dist\\; Write-Host ''; Write-Host '构建完成!' -ForegroundColor Green; Read-Host '按 Enter 键关闭窗口'",
             "group": "build",
             "presentation": {
                 "echo": true,

@@ -23,10 +23,14 @@ def get_config_path() -> Path:
 @dataclass
 class AudioConfig:
     """音频配置"""
-    input_device_id: Optional[int] = None   # VB-Cable Output (从Clubdeck接收)
-    output_device_id: Optional[int] = None  # VB-Cable Input (发送到Clubdeck)
-    sample_rate: int = 48000                # 采样率 48kHz
-    channels: int = 2                       # 立体声
+    input_device_id: Optional[int] = None   # VB-Cable Output (从 Clubdeck 接收)
+    output_device_id: Optional[int] = None  # VB-Cable Input (发送到 Clubdeck)
+    sample_rate: int = 48000                # 浏览器端采样率
+    input_sample_rate: int = 48000          # 输入设备采样率
+    output_sample_rate: int = 48000         # 输出设备采样率
+    channels: int = 2                       # 浏览器端声道数（始终立体声）
+    input_channels: int = 2                 # 输入设备声道数
+    output_channels: int = 2                # 输出设备声道数
     chunk_size: int = 512                   # 减小缓冲区以降低延迟
     bitrate: int = 128000                   # 128kbps
     dtype: str = 'int16'                    # 数据类型
@@ -47,7 +51,7 @@ class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     
     def load_from_file(self, config_path: Optional[Path] = None) -> 'AppConfig':
-        """从配置文件加载"""
+        """从配置文件加载（仅加载服务器配置，音频参数由设备决定）"""
         if config_path is None:
             config_path = get_config_path()
         
@@ -59,22 +63,14 @@ class AppConfig:
             with open(config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            # 加载服务器配置
+            # 仅加载服务器配置（音频参数由设备自动决定）
             if 'server' in data:
                 server_data = data['server']
                 self.server.host = server_data.get('host', self.server.host)
                 self.server.port = server_data.get('port', self.server.port)
                 self.server.debug = server_data.get('debug', self.server.debug)
             
-            # 加载音频配置
-            if 'audio' in data:
-                audio_data = data['audio']
-                self.audio.sample_rate = audio_data.get('sample_rate', self.audio.sample_rate)
-                self.audio.channels = audio_data.get('channels', self.audio.channels)
-                self.audio.bitrate = audio_data.get('bitrate', self.audio.bitrate)
-                self.audio.chunk_size = audio_data.get('chunk_size', self.audio.chunk_size)
-            
-            print(f"[✓] 已从 {config_path} 加载配置")
+            print(f"[✓] 已从 {config_path} 加载服务器配置")
             
         except json.JSONDecodeError as e:
             print(f"[错误] 配置文件格式错误: {e}")
@@ -83,8 +79,20 @@ class AppConfig:
         
         return self
     
+    def update_audio_from_device(self, sample_rate: int, channels: int, 
+                                    input_device_id: int = None, 
+                                    output_device_id: int = None) -> None:
+        """根据设备参数更新音频配置"""
+        self.audio.sample_rate = sample_rate
+        self.audio.channels = channels
+        if input_device_id is not None:
+            self.audio.input_device_id = input_device_id
+        if output_device_id is not None:
+            self.audio.output_device_id = output_device_id
+        print(f"[✓] 音频参数已更新: {sample_rate}Hz, {channels}ch")
+    
     def save_to_file(self, config_path: Optional[Path] = None) -> None:
-        """保存配置到文件"""
+        """保存配置到文件（仅保存服务器配置）"""
         if config_path is None:
             config_path = get_config_path()
         
@@ -93,12 +101,6 @@ class AppConfig:
                 'host': self.server.host,
                 'port': self.server.port,
                 'debug': self.server.debug
-            },
-            'audio': {
-                'sample_rate': self.audio.sample_rate,
-                'channels': self.audio.channels,
-                'bitrate': self.audio.bitrate,
-                'chunk_size': self.audio.chunk_size
             }
         }
         
