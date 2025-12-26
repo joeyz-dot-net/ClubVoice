@@ -33,15 +33,18 @@ class VoiceClient {
         this.noiseGateEnabled = true;
         
         // 对讲模式 (Push-to-Talk) - 说话时降低接收音量防止回路
-        // 默认开启，防止 Clubdeck 返回的声音产生回路
-        // 可以在控制台输入 client.pttMode = false 关闭
-        this.pttMode = true;  // 对讲模式开关（默认开启）
+        // 使用双 VB-Cable 隔离方案时可以关闭
+        // 可以在控制台输入 client.pttMode = true 开启
+        this.pttMode = false;  // 对讲模式开关（双VB-Cable方案下关闭）
         this.playbackGain = null;  // 播放增益节点
         this.playbackVolume = 1.0;  // 正常播放音量
         this.pttPlaybackVolume = 0.1;  // 说话时的播放音量 (降低到 10%)
         this.isSpeaking = false;  // 是否正在说话
         this.speakingTimeout = null;  // 说话状态超时
         this.speakingThreshold = 10;  // 说话检测门限（音量百分比）
+        
+        // 双工模式 - 由服务器配置决定
+        this.duplexMode = 'half';  // 'half' = 半双工(仅监听), 'full' = 全双工(双向通信)
         
         // 音频就绪状态
         this.audioReady = false;
@@ -84,6 +87,20 @@ class VoiceClient {
             this.isConnected = true;
             this.updateConnectionStatus(true);
             console.log('客户端 ID:', this.clientId);
+            
+            // 获取服务器配置的双工模式
+            if (data.duplex_mode) {
+                this.duplexMode = data.duplex_mode;
+                this.updateDuplexModeUI();
+                console.log('双工模式:', this.duplexMode);
+            }
+        });
+
+        this.socket.on('config', (data) => {
+            if (data.duplex_mode) {
+                this.duplexMode = data.duplex_mode;
+                this.updateDuplexModeUI();
+            }
         });
 
         this.socket.on('disconnect', () => {
@@ -111,6 +128,32 @@ class VoiceClient {
             this.statusDot.classList.remove('connected');
             this.statusText.textContent = '未连接';
             this.clientIdSpan.textContent = '';
+        }
+    }
+
+    updateDuplexModeUI() {
+        // 更新麦克风按钮显示
+        if (this.micButton) {
+            if (this.duplexMode === 'half') {
+                // 半双工模式 - 隐藏麦克风按钮
+                this.micButton.style.display = 'none';
+                if (this.micVolumeBar) {
+                    this.micVolumeBar.style.display = 'none';
+                }
+            } else {
+                // 全双工模式 - 显示麦克风按钮
+                this.micButton.style.display = 'inline-flex';
+                if (this.micVolumeBar) {
+                    this.micVolumeBar.style.display = 'block';
+                }
+            }
+        }
+        
+        // 更新模式指示器（如果存在）
+        const modeIndicator = document.getElementById('modeIndicator');
+        if (modeIndicator) {
+            modeIndicator.textContent = this.duplexMode === 'half' ? '📻 半双工 (仅监听)' : '📞 全双工';
+            modeIndicator.className = this.duplexMode === 'half' ? 'mode-half' : 'mode-full';
         }
     }
 

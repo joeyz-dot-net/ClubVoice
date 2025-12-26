@@ -184,6 +184,45 @@
             margin-top: 20px;
             display: none;
         }
+        
+        .mode-indicator {
+            text-align: center;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin-bottom: 15px;
+        }
+        
+        .mode-half {
+            background: rgba(241, 196, 15, 0.2);
+            border: 1px solid #f1c40f;
+            color: #f1c40f;
+        }
+        
+        .mode-full {
+            background: rgba(46, 204, 113, 0.2);
+            border: 1px solid #2ecc71;
+            color: #2ecc71;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .nav-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .nav-link a {
+            color: #3498db;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        .nav-link a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -198,6 +237,8 @@
             </div>
             <span id="clientId"></span>
         </div>
+        
+        <div class="mode-indicator mode-half" id="modeIndicator">📻 半双工 (仅监听)</div>
 
         <div class="controls">
             <button class="listen-button" id="listenButton">
@@ -232,9 +273,361 @@
         <p class="info-text">点击「开始收听」收听 Clubdeck 房间，点击麦克风发言</p>
 
         <div class="error-message" id="errorMessage"></div>
+
+        <div class="nav-link">
+            <a href="/static/debug.html">🔧 调试面板</a>
+        </div>
     </div>
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="/static/js/client.js"></script>
+    <script>
+        class VoiceClient {
+            constructor() {
+                this.socket = null;
+                this.clientId = null;
+                this.audioContext = null;
+                this.mediaStream = null;
+                this.mediaStreamSource = null;
+                this.scriptProcessor = null;
+                this.playbackGain = null;
+                
+                this.isConnected = false;
+                this.isMicActive = false;
+                this.audioReady = false;
+                
+                this.sampleRate = 48000;
+                this.channels = 2;
+                this.bufferSize = 2048;
+                
+                this.noiseGateEnabled = true;
+                this.noiseThreshold = 2;
+                
+                this.nextPlayTime = 0;
+                this.playbackLatency = 0.05;
+                
+                // 双工模式
+                this.duplexMode = 'half';
+                
+                this.initSocket();
+            }
+
+            initSocket() {
+                this.socket = io({ transports: ['websocket', 'polling'] });
+                
+                this.socket.on('connect', () => {
+                    console.log('WebSocket 已连接');
+                });
+
+                this.socket.on('connected', (data) => {
+                    this.clientId = data.client_id;
+                    this.isConnected = true;
+                    
+                    // 获取双工模式
+                    if (data.duplex_mode) {
+                        this.duplexMode = data.duplex_mode;
+                        this.updateDuplexUI();
+                    }
+                    
+                    this.updateUI();
+                    console.log('客户端ID:', this.clientId, '双工模式:', this.duplexMode);
+                });
+
+                this.socket.on('disconnect', () => {
+                    this.isConnected = false;
+                    this.updateUI();
+                    console.log('WebSocket 断开');
+                });
+
+                this.socket.on('audio_from_clubdeck', (data) => {
+                    this.handleIncomingAudio(data);
+                });
+
+                this.socket.on('connect_error', (error) => {
+                    console.error('连接错误:', error);
+                });
+            }
+
+            updateUI() {
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+                const clientIdEl = document.getElementById('clientId');
+                const micButton = document.getElementById('micButton');
+                
+                if (statusDot) {
+                    statusDot.className = 'status-dot' + (this.isConnected ? ' connected' : '');
+                }
+                if (statusText) {
+                    statusText.textContent = this.isConnected ? '已连接' : '未连接';
+                }
+                if (clientIdEl) {
+                    clientIdEl.textContent = this.clientId ? `ID: ${this.clientId.slice(0, 8)}...` : '';
+                }
+                
+                // 更新麦克风按钮状态
+                if (micButton) {
+                    micButton.className = 'mic-button' + (this.isMicActive ? ' active' : '');
+                }
+            }
+
+            updateDuplexUI() {
+                const modeIndicator = document.getElementById('modeIndicator');
+                const micButton = document.getElementById('micButton');
+                
+                if (this.duplexMode === 'half') {
+                    if (modeIndicator) {
+                        modeIndicator.textContent = '📻 半双工 (仅监听)';
+                        modeIndicator.className = 'mode-indicator mode-half';
+                    }
+                    if (micButton) {
+                        micButton.classList.add('hidden');
+                    }
+                } else {
+                    if (modeIndicator) {
+                        modeIndicator.textContent = '📞 全双工 (双向通信)';
+                        modeIndicator.className = 'mode-indicator mode-full';
+                    }
+                    if (micButton) {
+                        micButton.classList.remove('hidden');
+                    }
+                }
+            }
+
+            initAudioContext() {
+                if (!this.audioContext) {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: this.sampleRate
+                    });
+                }
+                
+                if (this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+                
+                if (!this.playbackGain) {
+                    this.playbackGain = this.audioContext.createGain();
+                    this.playbackGain.connect(this.audioContext.destination);
+                }
+                
+                this.audioReady = true;
+                
+                // 更新按钮状态
+                const btn = document.getElementById('listenButton');
+                if (btn) {
+                    btn.textContent = '✅ 正在收听 Clubdeck';
+                    btn.classList.add('active');
+                }
+                
+                console.log('音频已激活');
+            }
+
+            async toggleMic() {
+                if (this.isMicActive) {
+                    this.stopMic();
+                } else {
+                    await this.startMic();
+                }
+            }
+
+            async startMic() {
+                if (this.duplexMode === 'half') {
+                    console.log('半双工模式，麦克风已禁用');
+                    return;
+                }
+                
+                try {
+                    this.mediaStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            sampleRate: this.sampleRate,
+                            channelCount: this.channels
+                        }
+                    });
+
+                    this.initAudioContext();
+
+                    this.mediaStreamSource = this.audioContext.createMediaStreamSource(this.mediaStream);
+                    this.scriptProcessor = this.audioContext.createScriptProcessor(this.bufferSize, this.channels, this.channels);
+
+                    this.scriptProcessor.onaudioprocess = (event) => {
+                        if (!this.isMicActive) return;
+
+                        const leftChannel = event.inputBuffer.getChannelData(0);
+                        const rightChannel = this.channels > 1 && event.inputBuffer.numberOfChannels > 1 
+                            ? event.inputBuffer.getChannelData(1) 
+                            : leftChannel;
+                        
+                        const volume = this.calculateVolume(leftChannel);
+                        this.updateMicMeter(volume);
+                        
+                        if (this.noiseGateEnabled && volume < this.noiseThreshold) {
+                            return;
+                        }
+
+                        const int16Data = this.float32StereoToInt16(leftChannel, rightChannel);
+                        const base64Data = this.arrayBufferToBase64(int16Data.buffer);
+
+                        this.socket.emit('audio_data', { audio: base64Data, channels: this.channels });
+                    };
+
+                    this.mediaStreamSource.connect(this.scriptProcessor);
+                    this.scriptProcessor.connect(this.audioContext.destination);
+
+                    this.isMicActive = true;
+                    this.updateUI();
+                    console.log('麦克风已开启');
+
+                } catch (error) {
+                    console.error('麦克风错误:', error);
+                }
+            }
+
+            stopMic() {
+                if (this.scriptProcessor) {
+                    this.scriptProcessor.disconnect();
+                    this.scriptProcessor = null;
+                }
+                if (this.mediaStreamSource) {
+                    this.mediaStreamSource.disconnect();
+                    this.mediaStreamSource = null;
+                }
+                if (this.mediaStream) {
+                    this.mediaStream.getTracks().forEach(track => track.stop());
+                    this.mediaStream = null;
+                }
+                this.isMicActive = false;
+                this.updateUI();
+                console.log('麦克风已关闭');
+            }
+
+            handleIncomingAudio(data) {
+                try {
+                    const int16Data = this.base64ToInt16Array(data.audio);
+                    const channels = data.channels || this.channels;
+                    const { left, right } = this.int16StereoToFloat32(int16Data, channels);
+
+                    const volume = this.calculateVolume(left);
+                    this.updateSpkMeter(volume);
+
+                    if (this.audioReady) {
+                        this.playAudioStereo(left, right);
+                    }
+
+                } catch (error) {
+                    console.error('音频处理错误:', error);
+                }
+            }
+
+            playAudioStereo(leftData, rightData) {
+                if (!this.audioContext) return;
+
+                const buffer = this.audioContext.createBuffer(2, leftData.length, this.audioContext.sampleRate);
+                buffer.getChannelData(0).set(leftData);
+                buffer.getChannelData(1).set(rightData);
+
+                const source = this.audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(this.playbackGain);
+                
+                const currentTime = this.audioContext.currentTime;
+                if (this.nextPlayTime < currentTime) {
+                    this.nextPlayTime = currentTime + this.playbackLatency;
+                }
+                
+                source.start(this.nextPlayTime);
+                this.nextPlayTime += buffer.duration;
+            }
+
+            updateMicMeter(volume) {
+                const bar = document.getElementById('micVolumeBar');
+                const level = document.getElementById('micLevel');
+                if (bar) bar.style.width = Math.min(100, volume) + '%';
+                if (level) level.textContent = volume.toFixed(0) + '%';
+            }
+
+            updateSpkMeter(volume) {
+                const bar = document.getElementById('speakerVolumeBar');
+                const level = document.getElementById('speakerLevel');
+                if (bar) bar.style.width = Math.min(100, volume) + '%';
+                if (level) level.textContent = volume.toFixed(0) + '%';
+            }
+
+            calculateVolume(data) {
+                let sum = 0;
+                for (let i = 0; i < data.length; i++) {
+                    sum += Math.abs(data[i]);
+                }
+                return (sum / data.length) * 100 * 10;
+            }
+
+            float32StereoToInt16(left, right) {
+                const length = left.length;
+                const int16 = new Int16Array(length * 2);
+                for (let i = 0; i < length; i++) {
+                    int16[i * 2] = Math.max(-32768, Math.min(32767, Math.round(left[i] * 32767)));
+                    int16[i * 2 + 1] = Math.max(-32768, Math.min(32767, Math.round(right[i] * 32767)));
+                }
+                return int16;
+            }
+
+            int16StereoToFloat32(int16Data, channels) {
+                if (channels === 2) {
+                    const length = int16Data.length / 2;
+                    const left = new Float32Array(length);
+                    const right = new Float32Array(length);
+                    for (let i = 0; i < length; i++) {
+                        left[i] = int16Data[i * 2] / 32768;
+                        right[i] = int16Data[i * 2 + 1] / 32768;
+                    }
+                    return { left, right };
+                } else {
+                    const mono = new Float32Array(int16Data.length);
+                    for (let i = 0; i < int16Data.length; i++) {
+                        mono[i] = int16Data[i] / 32768;
+                    }
+                    return { left: mono, right: mono };
+                }
+            }
+
+            arrayBufferToBase64(buffer) {
+                const bytes = new Uint8Array(buffer);
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return btoa(binary);
+            }
+
+            base64ToInt16Array(base64) {
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                return new Int16Array(bytes.buffer);
+            }
+        }
+
+        // 初始化
+        let client = null;
+        
+        window.onload = () => {
+            client = new VoiceClient();
+            window.client = client;
+            
+            // 绑定按钮事件
+            document.getElementById('listenButton').addEventListener('click', () => {
+                client.initAudioContext();
+            });
+            
+            const micButton = document.getElementById('micButton');
+            if (micButton) {
+                micButton.addEventListener('click', () => {
+                    client.toggleMic();
+                });
+            }
+        };
+    </script>
 </body>
 </html>
