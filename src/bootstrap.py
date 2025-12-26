@@ -36,13 +36,18 @@ class Bootstrap:
         """选择音频设备"""
         console.print("[bold]步骤 1/2: 配置音频设备[/bold]\n")
         
-        input_id, output_id, sample_rate, channels = self.device_manager.interactive_select()
+        (input_id, output_id, input_sample_rate, output_sample_rate,
+         input_channels, output_channels, browser_sample_rate) = self.device_manager.interactive_select()
         
         return AudioConfig(
             input_device_id=input_id,
             output_device_id=output_id,
-            sample_rate=sample_rate,
-            channels=channels
+            sample_rate=browser_sample_rate,
+            input_sample_rate=input_sample_rate,
+            output_sample_rate=output_sample_rate,
+            channels=2,  # 浏览器端始终立体声
+            input_channels=input_channels,
+            output_channels=output_channels
         )
     
     def _display_summary(self, audio_config: AudioConfig):
@@ -50,15 +55,15 @@ class Bootstrap:
         console.print()
         console.print("[bold]步骤 2/2: 启动服务器[/bold]\n")
         
-        channels_str = '立体声' if audio_config.channels == 2 else '单声道'
         bitrate_str = f"{audio_config.bitrate // 1000}kbps" if audio_config.bitrate else "N/A"
         
         summary = f"""
 [cyan]音频配置:[/cyan]
   • 输入设备 ID: {audio_config.input_device_id}
+    {audio_config.input_channels}ch @ {audio_config.input_sample_rate}Hz
   • 输出设备 ID: {audio_config.output_device_id}
-  • 采样率: {audio_config.sample_rate} Hz
-  • 声道: {channels_str}
+    {audio_config.output_channels}ch @ {audio_config.output_sample_rate}Hz
+  • 浏览器端: {audio_config.channels}ch @ {audio_config.sample_rate}Hz
   • 比特率: {bitrate_str}
 
 [cyan]服务器配置:[/cyan]

@@ -32,6 +32,20 @@ class VoiceClient {
         this.noiseGate = 0.01;  // 低于此值静音
         this.noiseGateEnabled = true;
         
+        // 对讲模式 (Push-to-Talk) - 说话时降低接收音量防止回路
+        // 默认开启，防止 Clubdeck 返回的声音产生回路
+        // 可以在控制台输入 client.pttMode = false 关闭
+        this.pttMode = true;  // 对讲模式开关（默认开启）
+        this.playbackGain = null;  // 播放增益节点
+        this.playbackVolume = 1.0;  // 正常播放音量
+        this.pttPlaybackVolume = 0.1;  // 说话时的播放音量 (降低到 10%)
+        this.isSpeaking = false;  // 是否正在说话
+        this.speakingTimeout = null;  // 说话状态超时
+        this.speakingThreshold = 10;  // 说话检测门限（音量百分比）
+        
+        // 音频就绪状态
+        this.audioReady = false;
+        
         // 平滑播放
         this.nextPlayTime = 0;
         this.playbackLatency = 0.05; // 50ms 播放缓冲
@@ -41,6 +55,7 @@ class VoiceClient {
         this.statusText = document.getElementById('statusText');
         this.clientIdSpan = document.getElementById('clientId');
         this.micButton = document.getElementById('micButton');
+        this.listenButton = document.getElementById('listenButton');
         this.micVolumeBar = document.getElementById('micVolumeBar');
         this.micLevel = document.getElementById('micLevel');
         this.speakerVolumeBar = document.getElementById('speakerVolumeBar');
@@ -49,6 +64,7 @@ class VoiceClient {
 
         // 绑定事件
         this.micButton.addEventListener('click', () => this.toggleMic());
+        this.listenButton.addEventListener('click', () => this.startListening());
 
         // 初始化连接
         this.initSocket();
@@ -98,6 +114,35 @@ class VoiceClient {
         }
     }
 
+    // 开始收听 - 需要用户点击才能激活音频播放
+    startListening() {
+        if (!this.audioContext) {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: this.sampleRate
+            });
+        }
+        
+        // 确保 AudioContext 处于运行状态
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+        
+        // 创建播放增益节点
+        if (!this.playbackGain) {
+            this.playbackGain = this.audioContext.createGain();
+            this.playbackGain.connect(this.audioContext.destination);
+        }
+        
+        this.audioReady = true;
+        
+        // 更新按钮状态
+        this.listenButton.textContent = '✓ 正在收听 Clubdeck';
+        this.listenButton.classList.add('active');
+        this.listenButton.disabled = true;
+        
+        console.log('已开始收听 Clubdeck');
+    }
+
     async toggleMic() {
         if (this.isMicActive) {
             this.stopMic();
@@ -119,10 +164,17 @@ class VoiceClient {
                 }
             });
 
-            // 创建音频上下文
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                sampleRate: this.sampleRate
-            });
+            // 复用已有的音频上下文，或创建新的
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: this.sampleRate
+                });
+            }
+            
+            // 确保 AudioContext 处于运行状态
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+            }
 
             // 创建媒体流源
             this.mediaStreamSource = this.audioContext.createMediaStreamSource(this.mediaStream);
@@ -146,6 +198,11 @@ class VoiceClient {
                 // 噪声门限 - 音量太低时不发送
                 if (this.noiseGateEnabled && volume < 2) {
                     return;  // 静音状态不发送
+                }
+                
+                // 对讲模式：只有音量超过门限才认为在说话
+                if (this.pttMode && volume >= this.speakingThreshold) {
+                    this.setSpeaking(true);
                 }
 
                 // 交织立体声数据并转换为 Int16
@@ -191,14 +248,68 @@ class VoiceClient {
         this.isMicActive = false;
         this.micButton.classList.remove('active');
         this.updateMicVolume(0);
+        
+        // 恢复播放音量
+        this.setSpeaking(false);
+        
         console.log('麦克风已关闭');
+    }
+    
+    // 设置说话状态 - 控制播放音量防止回路啸叫
+    setSpeaking(speaking) {
+        if (!this.pttMode || !this.playbackGain) return;
+        
+        if (speaking) {
+            // 开始说话，降低播放音量
+            if (!this.isSpeaking) {
+                this.isSpeaking = true;
+                this.playbackGain.gain.setTargetAtTime(
+                    this.pttPlaybackVolume, 
+                    this.audioContext.currentTime, 
+                    0.05  // 50ms 淡入
+                );
+                console.log('对讲模式: 降低接收音量');
+            }
+            
+            // 重置超时
+            if (this.speakingTimeout) {
+                clearTimeout(this.speakingTimeout);
+            }
+            
+            // 300ms 后如果没有继续说话，恢复音量
+            this.speakingTimeout = setTimeout(() => {
+                this.setSpeaking(false);
+            }, 300);
+            
+        } else {
+            // 停止说话，恢复播放音量
+            if (this.isSpeaking) {
+                this.isSpeaking = false;
+                if (this.speakingTimeout) {
+                    clearTimeout(this.speakingTimeout);
+                    this.speakingTimeout = null;
+                }
+                this.playbackGain.gain.setTargetAtTime(
+                    this.playbackVolume, 
+                    this.audioContext.currentTime, 
+                    0.1  // 100ms 淡出
+                );
+                console.log('对讲模式: 恢复接收音量');
+            }
+        }
     }
 
     handleIncomingAudio(data) {
-        if (!this.audioContext) {
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                sampleRate: data.sample_rate || this.sampleRate
-            });
+        // 如果音频未就绪，只更新音量指示器但不播放
+        if (!this.audioReady) {
+            try {
+                const int16Data = this.base64ToInt16Array(data.audio);
+                const channels = data.channels || this.channels;
+                const { left } = this.int16StereoToFloat32(int16Data, channels);
+                const volume = this.calculateVolume(left);
+                this.updateSpeakerVolume(volume);
+            } catch (e) {}
+            return;
         }
 
         try {
@@ -229,11 +340,13 @@ class VoiceClient {
         const source = this.audioContext.createBufferSource();
         source.buffer = buffer;
         
-        // 使用 GainNode 平滑音量变化，减少爆音
-        const gainNode = this.audioContext.createGain();
-        gainNode.gain.value = 1.0;
-        source.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
+        // 使用全局播放增益节点（用于对讲模式音量控制）
+        if (!this.playbackGain) {
+            this.playbackGain = this.audioContext.createGain();
+            this.playbackGain.connect(this.audioContext.destination);
+        }
+        
+        source.connect(this.playbackGain);
         
         // 平滑调度播放时间
         const currentTime = this.audioContext.currentTime;

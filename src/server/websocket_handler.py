@@ -10,6 +10,7 @@ from rich.console import Console
 
 from ..audio.vb_cable_bridge import VBCableBridge
 from ..audio.processor import AudioProcessor
+from .app import add_audio_to_stream
 
 
 console = Console()
@@ -21,7 +22,7 @@ class WebSocketHandler:
     def __init__(self, socketio: SocketIO, bridge: VBCableBridge):
         self.socketio = socketio
         self.bridge = bridge
-        self.processor = AudioProcessor(bridge.sample_rate, bridge.channels)
+        self.processor = AudioProcessor(bridge.browser_sample_rate, bridge.browser_channels)
         
         # 连接管理
         self.connected_clients: Set[str] = set()
@@ -85,20 +86,24 @@ class WebSocketHandler:
                 # 从 VB-Cable 获取 Clubdeck 音频
                 audio_data = self.bridge.receive_from_clubdeck(timeout=0.05)
                 
-                if audio_data is not None and len(self.connected_clients) > 0:
+                if audio_data is not None:
                     # 音频处理（降噪、滤波）- 只处理单声道
                     if audio_data.ndim == 1:
                         audio_data = self.processor.process_audio(audio_data)
                     
-                    # 编码为 base64
-                    audio_base64 = self.processor.numpy_to_base64(audio_data)
+                    # 同时推送到 HTTP 音频流（用于 iOS 后台播放）
+                    add_audio_to_stream(audio_data)
                     
-                    # 广播到所有客户端
-                    self.socketio.emit('audio_from_clubdeck', {
-                        'audio': audio_base64,
-                        'sample_rate': self.bridge.sample_rate,
-                        'channels': self.bridge.channels
-                    })
+                    if len(self.connected_clients) > 0:
+                        # 编码为 base64
+                        audio_base64 = self.processor.numpy_to_base64(audio_data)
+                        
+                        # 广播到所有客户端
+                        self.socketio.emit('audio_from_clubdeck', {
+                            'audio': audio_base64,
+                            'sample_rate': self.bridge.browser_sample_rate,
+                            'channels': self.bridge.browser_channels
+                        })
             except Exception as e:
                 console.print(f"[red]转发音频错误: {e}[/red]")
             

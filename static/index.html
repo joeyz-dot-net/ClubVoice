@@ -147,6 +147,35 @@
             margin-top: 20px;
         }
 
+        .listen-button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(145deg, #3498db, #2980b9);
+            color: white;
+            font-size: 1.1rem;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+        }
+
+        .listen-button:hover {
+            transform: scale(1.02);
+        }
+
+        .listen-button.active {
+            background: linear-gradient(145deg, #27ae60, #2ecc71);
+            box-shadow: 0 4px 15px rgba(46, 204, 113, 0.4);
+        }
+
+        .listen-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .error-message {
             background: rgba(231, 76, 60, 0.2);
             border: 1px solid #e74c3c;
@@ -171,6 +200,10 @@
         </div>
 
         <div class="controls">
+            <button class="listen-button" id="listenButton">
+                🔊 开始收听 Clubdeck
+            </button>
+
             <button class="mic-button" id="micButton" title="点击开始/停止通话">
                 🎤
             </button>
@@ -196,7 +229,7 @@
             </div>
         </div>
 
-        <p class="info-text">点击麦克风按钮开始与 Clubdeck 房间通话</p>
+        <p class="info-text">点击「开始收听」收听 Clubdeck 房间，点击麦克风发言</p>
 
         <div class="error-message" id="errorMessage"></div>
     </div>
