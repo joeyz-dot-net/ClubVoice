@@ -34,6 +34,7 @@ class AudioConfig:
     chunk_size: int = 512                   # 减小缓冲区以降低延迟
     bitrate: int = 128000                   # 128kbps
     dtype: str = 'int16'                    # 数据类型
+    duplex_mode: str = 'half'               # 通信模式: 'half' = 半双工, 'full' = 全双工
 
 
 @dataclass
@@ -63,12 +64,17 @@ class AppConfig:
             with open(config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            # 仅加载服务器配置（音频参数由设备自动决定）
+            # 加载服务器配置
             if 'server' in data:
                 server_data = data['server']
                 self.server.host = server_data.get('host', self.server.host)
                 self.server.port = server_data.get('port', self.server.port)
                 self.server.debug = server_data.get('debug', self.server.debug)
+            
+            # 加载音频通信模式
+            if 'audio' in data:
+                audio_data = data['audio']
+                self.audio.duplex_mode = audio_data.get('duplex_mode', 'half')
             
             print(f"[✓] 已从 {config_path} 加载服务器配置")
             

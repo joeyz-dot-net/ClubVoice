@@ -10,6 +10,7 @@ from rich.console import Console
 
 from ..audio.vb_cable_bridge import VBCableBridge
 from ..audio.processor import AudioProcessor
+from ..config.settings import config
 from .app import add_audio_to_stream
 
 
@@ -31,6 +32,20 @@ class WebSocketHandler:
         self.running = False
         self.forward_thread: Optional[threading.Thread] = None
         
+        # 服务端 Ducking (闪避) - 麦克风说话时降低接收音量
+        self.ducking_enabled = True  # 是否启用闪避
+        self.ducking_volume = 0.15   # 说话时的最低音量 (15%)
+        self.ducking_threshold = 500  # 音量阈值 (int16 范围)
+        self.is_speaking = False      # 当前是否在说话
+        self.speaking_decay = 0       # 说话状态衰减计数
+        self.speaking_decay_max = 30  # 衰减计数上限 (~300ms)
+        self._ducking_lock = threading.Lock()
+        
+        # 平滑过渡参数
+        self.current_volume = 1.0     # 当前音量系数 (0.0 ~ 1.0)
+        self.target_volume = 1.0      # 目标音量系数
+        self.volume_smooth_speed = 0.08  # 音量变化速度 (每帧变化量，越小越平滑)
+        
         # 注册事件处理器
         self._register_handlers()
     
@@ -43,7 +58,18 @@ class WebSocketHandler:
             client_id = request.sid
             self.connected_clients.add(client_id)
             console.print(f"[green]客户端已连接: {client_id}[/green]")
-            emit('connected', {'client_id': client_id})
+            # 发送连接确认和当前配置
+            emit('connected', {
+                'client_id': client_id,
+                'duplex_mode': config.audio.duplex_mode
+            })
+        
+        @self.socketio.on('get_config')
+        def handle_get_config():
+            """返回当前服务器配置"""
+            emit('config', {
+                'duplex_mode': config.audio.duplex_mode
+            })
         
         @self.socketio.on('disconnect')
         def handle_disconnect():
@@ -55,11 +81,24 @@ class WebSocketHandler:
         @self.socketio.on('audio_data')
         def handle_audio_data(data):
             """接收浏览器音频并转发到 Clubdeck"""
+            # 半双工模式下忽略浏览器麦克风
+            if config.audio.duplex_mode == 'half':
+                return
+            
             try:
                 audio_base64 = data.get('audio')
                 if audio_base64:
                     # 解码音频
                     audio_array = self.processor.base64_to_numpy(audio_base64)
+                    
+                    # 检测是否在说话（用于 ducking）
+                    if self.ducking_enabled:
+                        max_amplitude = np.max(np.abs(audio_array))
+                        with self._ducking_lock:
+                            if max_amplitude > self.ducking_threshold:
+                                self.is_speaking = True
+                                self.speaking_decay = self.speaking_decay_max
+                    
                     # 音频处理（降噪、滤波）
                     audio_array = self.processor.process_audio(audio_array)
                     # 发送到 VB-Cable (Clubdeck)
@@ -90,6 +129,32 @@ class WebSocketHandler:
                     # 音频处理（降噪、滤波）- 只处理单声道
                     if audio_data.ndim == 1:
                         audio_data = self.processor.process_audio(audio_data)
+                    
+                    # 应用 Ducking (闪避) - 说话时降低音量（平滑过渡）
+                    if self.ducking_enabled:
+                        with self._ducking_lock:
+                            if self.speaking_decay > 0:
+                                self.speaking_decay -= 1
+                                self.target_volume = self.ducking_volume
+                            else:
+                                self.is_speaking = False
+                                self.target_volume = 1.0
+                            
+                            # 平滑过渡到目标音量
+                            if self.current_volume < self.target_volume:
+                                self.current_volume = min(
+                                    self.current_volume + self.volume_smooth_speed,
+                                    self.target_volume
+                                )
+                            elif self.current_volume > self.target_volume:
+                                self.current_volume = max(
+                                    self.current_volume - self.volume_smooth_speed,
+                                    self.target_volume
+                                )
+                            
+                            # 应用当前音量
+                            if self.current_volume < 1.0:
+                                audio_data = (audio_data.astype(np.float32) * self.current_volume).astype(np.int16)
                     
                     # 同时推送到 HTTP 音频流（用于 iOS 后台播放）
                     add_audio_to_stream(audio_data)

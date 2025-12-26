@@ -54,86 +54,184 @@ class DeviceManager:
     
     def display_devices(self) -> None:
         """显示设备列表"""
+        # 先计算推荐设备
+        recommended_input = self._find_best_device(self.input_devices, is_input=True)
+        recommended_output = self._find_best_device(self.output_devices, is_input=False)
+        
         # 输入设备表格
         input_table = Table(title="🎤 输入设备 (从 Clubdeck 接收音频)", show_header=True, header_style="bold cyan")
-        input_table.add_column("序号", style="dim", width=6)
-        input_table.add_column("设备名称", width=45)
-        input_table.add_column("声道", justify="center", width=6)
-        input_table.add_column("采样率", justify="center", width=10)
-        input_table.add_column("VB-Cable", justify="center", width=10)
+        input_table.add_column("序号", width=6)
+        input_table.add_column("设备名称", width=50)
+        input_table.add_column("声道", justify="center", width=8)
+        input_table.add_column("采样率", justify="center", width=12)
+        input_table.add_column("类型", justify="center", width=12)
         
         for idx, device in enumerate(self.input_devices, 1):
-            is_vb = '✓' if 'CABLE' in device['name'].upper() else ''
-            input_table.add_row(
-                str(idx),
-                device['name'],
-                str(device['channels']),
-                f"{device['sample_rate']} Hz",
-                f"[green]{is_vb}[/green]"
-            )
+            is_recommended = idx == recommended_input
+            name_upper = device['name'].upper()
+            
+            # 设备类型识别
+            if 'VOICEMEETER' in name_upper:
+                if 'OUT B2' in name_upper or 'AUX OUT' in name_upper:
+                    dev_type = "[cyan]VM B2[/cyan]"
+                elif 'OUT B1' in name_upper:
+                    dev_type = "[blue]VM B1[/blue]"
+                else:
+                    dev_type = "[dim]VM[/dim]"
+            elif 'HI-FI CABLE' in name_upper or 'HIFI CABLE' in name_upper:
+                dev_type = "[bold magenta]Hi-Fi Cable[/bold magenta]"
+            elif 'CABLE' in name_upper:
+                dev_type = "[green]VB-Cable[/green]"
+            else:
+                dev_type = ""
+            
+            channels = device['channels']
+            if channels >= 8:
+                ch_str = f"[bold yellow]{channels}ch[/bold yellow]"
+            elif channels == 2:
+                ch_str = f"[green]{channels}ch[/green]"
+            else:
+                ch_str = f"{channels}ch"
+            
+            # 推荐行高亮
+            if is_recommended:
+                input_table.add_row(
+                    f"[bold green]★ {idx}[/bold green]",
+                    f"[bold green]{device['name']}[/bold green]",
+                    ch_str,
+                    f"[bold green]{device['sample_rate']} Hz[/bold green]",
+                    dev_type,
+                    style="on dark_green"
+                )
+            else:
+                input_table.add_row(
+                    f"  {idx}",
+                    device['name'],
+                    ch_str,
+                    f"{device['sample_rate']} Hz",
+                    dev_type
+                )
         
         console.print(input_table)
         console.print()
         
         # 输出设备表格
         output_table = Table(title="🔊 输出设备 (发送音频到 Clubdeck)", show_header=True, header_style="bold cyan")
-        output_table.add_column("序号", style="dim", width=6)
-        output_table.add_column("设备名称", width=45)
-        output_table.add_column("声道", justify="center", width=6)
-        output_table.add_column("采样率", justify="center", width=10)
-        output_table.add_column("VB-Cable", justify="center", width=10)
+        output_table.add_column("序号", width=6)
+        output_table.add_column("设备名称", width=50)
+        output_table.add_column("声道", justify="center", width=8)
+        output_table.add_column("采样率", justify="center", width=12)
+        output_table.add_column("类型", justify="center", width=12)
         
         for idx, device in enumerate(self.output_devices, 1):
-            is_vb = '✓' if 'CABLE' in device['name'].upper() else ''
-            output_table.add_row(
-                str(idx),
-                device['name'],
-                str(device['channels']),
-                f"{device['sample_rate']} Hz",
-                f"[green]{is_vb}[/green]"
-            )
+            is_recommended = idx == recommended_output
+            name_upper = device['name'].upper()
+            
+            # 设备类型识别
+            if 'VOICEMEETER' in name_upper:
+                if 'INPUT' in name_upper and 'AUX' not in name_upper:
+                    dev_type = "[cyan]VM VAIO[/cyan]"
+                elif 'AUX INPUT' in name_upper:
+                    dev_type = "[blue]VM AUX[/blue]"
+                else:
+                    dev_type = "[dim]VM[/dim]"
+            elif 'HI-FI CABLE' in name_upper or 'HIFI CABLE' in name_upper:
+                dev_type = "[bold magenta]Hi-Fi Cable[/bold magenta]"
+            elif 'CABLE' in name_upper:
+                dev_type = "[green]VB-Cable[/green]"
+            else:
+                dev_type = ""
+            
+            channels = device['channels']
+            if channels >= 8:
+                ch_str = f"[bold yellow]{channels}ch[/bold yellow]"
+            elif channels == 2:
+                ch_str = f"[green]{channels}ch[/green]"
+            else:
+                ch_str = f"{channels}ch"
+            
+            # 推荐行高亮
+            if is_recommended:
+                output_table.add_row(
+                    f"[bold green]★ {idx}[/bold green]",
+                    f"[bold green]{device['name']}[/bold green]",
+                    ch_str,
+                    f"[bold green]{device['sample_rate']} Hz[/bold green]",
+                    dev_type,
+                    style="on dark_green"
+                )
+            else:
+                output_table.add_row(
+                    f"  {idx}",
+                    device['name'],
+                    ch_str,
+                    f"{device['sample_rate']} Hz",
+                    dev_type
+                )
         
         console.print(output_table)
     
     def _find_best_device(self, devices: List[Dict], is_input: bool = True) -> Optional[int]:
         """
         找到最佳匹配的设备
-        优先级：VB-Cable + 2声道 + 48kHz > VB-Cable + 2声道 > VB-Cable > 其他
+        优先选择 VB-Cable 2ch 设备（单 VB-Cable 方案）
         
         Returns:
             最佳设备的序号 (1-based)，如果没有找到返回 None
         """
-        # 目标参数：优先选择 48kHz 立体声
-        target_sample_rate = 48000
-        target_channels = 2
-        keyword = 'CABLE OUTPUT' if is_input else 'CABLE INPUT'
-        
         best_idx = None
         best_score = -1
         
         for idx, d in enumerate(devices, 1):
             name_upper = d['name'].upper()
             
-            # 必须是 VB-Cable 设备
-            if keyword not in name_upper:
+            # 识别设备类型
+            is_hifi_cable = 'HI-FI CABLE' in name_upper or 'HIFI CABLE' in name_upper
+            is_vb_cable = 'CABLE' in name_upper and not is_hifi_cable and 'VOICEMEETER' not in name_upper
+            is_voicemeeter = 'VOICEMEETER' in name_upper
+            
+            if not is_vb_cable and not is_voicemeeter:
                 continue
             
             # 计算匹配分数
             score = 0
             
-            # 采样率匹配 (+10分)
-            if d['sample_rate'] >= target_sample_rate:
-                score += 10
+            if is_input:
+                # 输入设备：从 Clubdeck 接收音频
+                # 推荐: Hi-Fi Cable Output（双线缆方案，高品质）
+                if is_hifi_cable:
+                    score += 200  # Hi-Fi Cable 最高优先级（避免回环 + 高音质）
+                elif is_vb_cable:
+                    if d['channels'] == 2:
+                        score += 150  # 2ch VB-Cable 次优（单线缆方案）
+                    elif d['channels'] >= 16:
+                        score += 80
+                elif is_voicemeeter:
+                    if 'OUT B2' in name_upper:
+                        score += 50
+                    elif 'AUX OUT' in name_upper:
+                        score += 40
+                    else:
+                        score += 10
+            else:
+                # 输出设备：发送音频到 Clubdeck
+                # 推荐: VB-Cable 2ch Input（与浏览器配对，免费方案）
+                if is_vb_cable:
+                    if d['channels'] == 2:
+                        score += 150  # 2ch VB-Cable 最高优先级（完美配对）
+                    elif d['channels'] >= 16:
+                        score += 80
+                elif is_hifi_cable:
+                    score += 120  # Hi-Fi Cable 次优（避免与输入重复）
+                elif is_voicemeeter:
+                    if 'INPUT' in name_upper and 'AUX' not in name_upper and 'OUT' not in name_upper:
+                        score += 50
+                    else:
+                        score += 10
             
-            # 声道数匹配 - 优先选择2声道 (+20分)
-            if d['channels'] == target_channels:
-                score += 20
-            elif d['channels'] > target_channels:
-                score += 5  # 声道数过多，扣分
-            
-            # 排除16声道设备（通常不需要）
-            if d['channels'] > 8:
-                score -= 10
+            # 高采样率加分
+            if d['sample_rate'] >= 48000:
+                score += 5
             
             if score > best_score:
                 best_score = score
@@ -156,13 +254,13 @@ class DeviceManager:
         # 自动检测最佳 VB-Cable 设备
         vb_inputs, vb_outputs = self.get_vb_cable_devices()
         
-        # 找到最佳输入设备 (CABLE Output, 2ch, 48kHz)
+        # 找到最佳输入设备
         default_input = self._find_best_device(self.input_devices, is_input=True)
         
-        console.print("[bold yellow]选择输入设备[/bold yellow] (接收 Clubdeck 音频，通常是 CABLE Output)")
+        console.print("[bold yellow]选择输入设备[/bold yellow] [dim](从 Clubdeck 接收音频)[/dim]")
         if default_input:
             best_device = self.input_devices[default_input - 1]
-            console.print(f"[dim]检测到 VB-Cable，建议选择: {default_input} ({best_device['channels']}ch {best_device['sample_rate']}Hz)[/dim]")
+            console.print(f"[bold green]★ 推荐: {default_input} - {best_device['name'][:40]}[/bold green]")
         
         input_choice = IntPrompt.ask(
             "请输入序号",
@@ -173,13 +271,13 @@ class DeviceManager:
         
         console.print()
         
-        # 找到最佳输出设备 (CABLE Input, 2ch, 48kHz)
+        # 找到最佳输出设备
         default_output = self._find_best_device(self.output_devices, is_input=False)
         
-        console.print("[bold yellow]选择输出设备[/bold yellow] (发送到 Clubdeck，通常是 CABLE Input)")
+        console.print("[bold yellow]选择输出设备[/bold yellow] [dim](发送音频到 Clubdeck)[/dim]")
         if default_output:
             best_device = self.output_devices[default_output - 1]
-            console.print(f"[dim]检测到 VB-Cable，建议选择: {default_output} ({best_device['channels']}ch {best_device['sample_rate']}Hz)[/dim]")
+            console.print(f"[bold green]★ 推荐: {default_output} - {best_device['name'][:40]}[/bold green]")
         
         output_choice = IntPrompt.ask(
             "请输入序号",
@@ -187,6 +285,11 @@ class DeviceManager:
             choices=[str(i) for i in range(1, len(self.output_devices) + 1)]
         )
         selected_output = self.output_devices[output_choice - 1]
+        
+        console.print()
+        
+        # 从配置文件读取双工模式（不再交互式选择）
+        duplex_mode = config.audio.duplex_mode
         
         # 各设备使用各自的采样率
         input_sample_rate = selected_input['sample_rate']
@@ -213,12 +316,15 @@ class DeviceManager:
         config.audio.output_device_id = selected_output['id']
         
         console.print()
+        
+        mode_text = "[yellow]半双工 (仅监听)[/yellow]" if duplex_mode == "half" else "[green]全双工 (双向通信)[/green]"
         console.print(Panel(
             f"[green]✓ 输入设备:[/green] {selected_input['name']}\n"
             f"    {input_channels}ch @ {input_sample_rate}Hz\n"
             f"[green]✓ 输出设备:[/green] {selected_output['name']}\n"
             f"    {output_channels}ch @ {output_sample_rate}Hz\n"
-            f"[green]✓ 浏览器:[/green] {browser_channels}ch @ {browser_sample_rate}Hz",
+            f"[green]✓ 浏览器:[/green] {browser_channels}ch @ {browser_sample_rate}Hz\n"
+            f"[green]✓ 通信模式:[/green] {mode_text}",
             title="设备配置确认 (自动转换采样率和声道)",
             border_style="green"
         ))

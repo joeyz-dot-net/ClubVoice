@@ -105,6 +105,21 @@ class VBCableBridge:
         if source_channels == self.browser_channels:
             return audio_data
         
+        # 处理多维数组：sounddevice 返回 (frames, channels) 形状
+        if audio_data.ndim == 2:
+            frames = audio_data.shape[0]
+            if source_channels == 1:
+                # 单声道 -> 立体声
+                mono = audio_data[:, 0]
+                stereo = np.zeros((frames, 2), dtype=np.int16)
+                stereo[:, 0] = mono
+                stereo[:, 1] = mono
+                return stereo
+            else:
+                # 多声道 -> 立体声：只取前两个声道
+                return audio_data[:, :2].copy()
+        
+        # 处理一维数组
         frames = len(audio_data) // source_channels
         
         if source_channels == 1:
