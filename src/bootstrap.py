@@ -61,10 +61,12 @@ class Bootstrap:
 [cyan]音频配置:[/cyan]
   • 输入设备 ID: {audio_config.input_device_id}
     {audio_config.input_channels}ch @ {audio_config.input_sample_rate}Hz
+    [dim](Clubdeck + MPV 已混合)[/dim]
   • 输出设备 ID: {audio_config.output_device_id}
     {audio_config.output_channels}ch @ {audio_config.output_sample_rate}Hz
   • 浏览器端: {audio_config.channels}ch @ {audio_config.sample_rate}Hz
   • 比特率: {bitrate_str}
+  • 架构: [cyan]简化单输入单输出[/cyan]
 
 [cyan]服务器配置:[/cyan]
   • 地址: http://{config.server.host}:{config.server.port}

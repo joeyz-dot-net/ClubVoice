@@ -15,7 +15,7 @@ console = Console()
 
 
 class VBCableBridge:
-    """VB-Cable 音频桥接器 - 支持不同采样率和声道数的输入输出设备"""
+    """VB-Cable 音频桥接器 - 单输入单输出（Clubdeck 已包含 MPV 混音）"""
     
     def __init__(
         self,
@@ -42,8 +42,9 @@ class VBCableBridge:
         self.processor = AudioProcessor(browser_sample_rate, browser_channels)
         
         # 音频队列 - 增大容量避免丢帧
-        self.input_queue: queue.Queue = queue.Queue(maxsize=200)   # 从 VB-Cable 接收
-        self.output_queue: queue.Queue = queue.Queue(maxsize=200)  # 发送到 VB-Cable
+        self.input_queue: queue.Queue = queue.Queue(maxsize=200)   # 从 Clubdeck 接收
+        self.mpv_queue: queue.Queue = queue.Queue(maxsize=200)     # 从 MPV 接收
+        self.output_queue: queue.Queue = queue.Queue(maxsize=200)  # 发送到 Clubdeck
         
         # 平滑播放缓冲
         self.output_buffer = np.zeros(0, dtype=np.int16)
@@ -57,9 +58,11 @@ class VBCableBridge:
         self.on_audio_received: Optional[Callable[[np.ndarray], None]] = None
         
         console.print(f"[dim]音频桥接器配置:[/dim]")
-        console.print(f"[dim]  输入: {input_channels}ch @ {input_sample_rate}Hz[/dim]")
-        console.print(f"[dim]  输出: {output_channels}ch @ {output_sample_rate}Hz[/dim]")
+        console.print(f"[dim]  输入: {input_channels}ch @ {input_sample_rate}Hz (Clubdeck + MPV 已混合)[/dim]")
+        console.print(f"[dim]  输出: {output_channels}ch @ {output_sample_rate}Hz (发送到 Clubdeck)[/dim]")
         console.print(f"[dim]  浏览器: {browser_channels}ch @ {browser_sample_rate}Hz[/dim]")
+        console.print(f"[dim]  Chunk Size: {chunk_size} frames[/dim]")
+        console.print(f"[green]✓ 架构: 简化单输入单输出（无 Python 混音）[/green]")
     
     def _resample(self, audio_data: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
         """简单的线性插值重采样"""
@@ -154,7 +157,7 @@ class VBCableBridge:
             return multi
     
     def _input_callback(self, indata: np.ndarray, frames: int, time_info, status):
-        """输入流回调 - 接收 Clubdeck 音频，转换采样率和声道数"""
+        """输入流回调 - 接收 Clubdeck 音频（已包含 MPV 混音）并发送到浏览器"""
         if status:
             console.print(f"[yellow]输入状态: {status}[/yellow]")
         
@@ -173,15 +176,17 @@ class VBCableBridge:
                 self.browser_channels
             )
         
+        # 3. 放入队列供浏览器读取
         try:
             self.input_queue.put_nowait(stereo_data)
         except queue.Full:
             pass  # 队列满时丢弃
-        
-        # 触发回调
-        if self.on_audio_received:
-            self.on_audio_received(stereo_data)
     
+    def _mpv_callback(self, indata: np.ndarray, frames: int, time_info, status):
+        """MPV 输入流回调 - 接收 MPV 音乐，缓存以供混音使用"""
+        if status:
+            console.print(f"[yellow]MPV 输入状态: {status}[/yellow]")
+        
     def _output_callback(self, outdata: np.ndarray, frames: int, time_info, status):
         """输出流回调 - 发送音频到 Clubdeck，处理采样率和声道转换"""
         if status:
@@ -235,7 +240,7 @@ class VBCableBridge:
         
         self.running = True
         
-        # 启动输入流 (从 VB-Cable 读取 Clubdeck 音频) - 使用输入设备的参数
+        # 启动输入流 (从 Hi-Fi Cable 读取 Clubdeck 音频 + MPV 音乐)
         self.input_stream = sd.InputStream(
             device=self.input_device_id,
             samplerate=self.input_sample_rate,
@@ -245,8 +250,9 @@ class VBCableBridge:
             callback=self._input_callback
         )
         self.input_stream.start()
+        console.print(f"[dim]✓ 输入流已启动: {self.input_sample_rate}Hz, {self.input_channels}ch, blocksize={self.chunk_size}[/dim]")
         
-        # 启动输出流 (向 VB-Cable 写入浏览器音频) - 使用输出设备的参数
+        # 启动输出流 (向 Hi-Fi Cable 写入浏览器音频)
         self.output_stream = sd.OutputStream(
             device=self.output_device_id,
             samplerate=self.output_sample_rate,
@@ -256,8 +262,9 @@ class VBCableBridge:
             callback=self._output_callback
         )
         self.output_stream.start()
+        console.print(f"[dim]✓ 输出流已启动: {self.output_sample_rate}Hz, {self.output_channels}ch, blocksize={self.chunk_size}[/dim]")
         
-        console.print("[green]✓ 音频桥接已启动[/green]")
+        console.print("[green]✓ 音频桥接已启动（简化架构，无 Python 混音）[/green]")
     
     def stop(self) -> None:
         """停止音频桥接"""
@@ -276,7 +283,7 @@ class VBCableBridge:
         console.print("[yellow]音频桥接已停止[/yellow]")
     
     def send_to_clubdeck(self, audio_data: np.ndarray) -> None:
-        """发送音频到 Clubdeck (通过 VB-Cable)"""
+        """发送浏览器音频到 Clubdeck"""
         try:
             self.output_queue.put_nowait(audio_data.astype(np.int16))
         except queue.Full:
@@ -294,6 +301,12 @@ class VBCableBridge:
         while not self.input_queue.empty():
             try:
                 self.input_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        while not self.mpv_queue.empty():
+            try:
+                self.mpv_queue.get_nowait()
             except queue.Empty:
                 break
         

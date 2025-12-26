@@ -23,8 +23,8 @@ def get_config_path() -> Path:
 @dataclass
 class AudioConfig:
     """音频配置"""
-    input_device_id: Optional[int] = None   # VB-Cable Output (从 Clubdeck 接收)
-    output_device_id: Optional[int] = None  # VB-Cable Input (发送到 Clubdeck)
+    input_device_id: Optional[int] = None   # Hi-Fi Cable Output (从 Clubdeck 接收，已包含 MPV 音乐)
+    output_device_id: Optional[int] = None  # Hi-Fi Cable Input (发送浏览器音频到 Clubdeck)
     sample_rate: int = 48000                # 浏览器端采样率
     input_sample_rate: int = 48000          # 输入设备采样率
     output_sample_rate: int = 48000         # 输出设备采样率

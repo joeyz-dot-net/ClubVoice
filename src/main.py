@@ -44,7 +44,7 @@ def main():
         bootstrap = Bootstrap()
         audio_config = bootstrap.run()
         
-        # 创建音频桥接器 - 支持不同采样率和声道数的输入输出设备
+        # 创建音频桥接器 - 简化单输入单输出架构
         bridge = VBCableBridge(
             input_device_id=audio_config.input_device_id,
             output_device_id=audio_config.output_device_id,

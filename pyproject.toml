@@ -1,7 +1,7 @@
 [project]
-name = "voice-communication-app"
+name = "clubvoice"
 version = "0.1.0"
-description = "浏览器 ↔ Clubdeck 实时语音通信应用"
+description = "ClubVoice - 浏览器 ↔ Clubdeck 实时语音通信应用"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

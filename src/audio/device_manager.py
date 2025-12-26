@@ -173,8 +173,8 @@ class DeviceManager:
     
     def _find_best_device(self, devices: List[Dict], is_input: bool = True) -> Optional[int]:
         """
-        找到最佳匹配的设备
-        优先选择 VB-Cable 2ch 设备（单 VB-Cable 方案）
+        找到最佳匹配的设备（Clubdeck 通信）
+        双线缆方案：Hi-Fi Cable 用于 Clubdeck，VB-Cable 用于 MPV
         
         Returns:
             最佳设备的序号 (1-based)，如果没有找到返回 None
@@ -190,7 +190,7 @@ class DeviceManager:
             is_vb_cable = 'CABLE' in name_upper and not is_hifi_cable and 'VOICEMEETER' not in name_upper
             is_voicemeeter = 'VOICEMEETER' in name_upper
             
-            if not is_vb_cable and not is_voicemeeter:
+            if not is_vb_cable and not is_voicemeeter and not is_hifi_cable:
                 continue
             
             # 计算匹配分数
@@ -198,14 +198,14 @@ class DeviceManager:
             
             if is_input:
                 # 输入设备：从 Clubdeck 接收音频
-                # 推荐: Hi-Fi Cable Output（双线缆方案，高品质）
+                # 推荐: VB-Cable 2ch Output
                 if is_hifi_cable:
-                    score += 200  # Hi-Fi Cable 最高优先级（避免回环 + 高音质）
+                    score += 150  # Hi-Fi Cable 优先级降低
                 elif is_vb_cable:
-                    if d['channels'] == 2:
-                        score += 150  # 2ch VB-Cable 次优（单线缆方案）
-                    elif d['channels'] >= 16:
-                        score += 80
+                    if d['channels'] == 2 or '2CH' in name_upper:
+                        score += 200  # 2ch VB-Cable 最高优先级
+                    elif d['channels'] >= 16 or '16CH' in name_upper:
+                        score += 50   # 16ch 优先级降低
                 elif is_voicemeeter:
                     if 'OUT B2' in name_upper:
                         score += 50
@@ -215,14 +215,14 @@ class DeviceManager:
                         score += 10
             else:
                 # 输出设备：发送音频到 Clubdeck
-                # 推荐: VB-Cable 2ch Input（与浏览器配对，免费方案）
-                if is_vb_cable:
-                    if d['channels'] == 2:
-                        score += 150  # 2ch VB-Cable 最高优先级（完美配对）
-                    elif d['channels'] >= 16:
-                        score += 80
-                elif is_hifi_cable:
-                    score += 120  # Hi-Fi Cable 次优（避免与输入重复）
+                # 推荐: VB-Cable 2ch Input
+                if is_hifi_cable:
+                    score += 150  # Hi-Fi Cable 优先级降低
+                elif is_vb_cable:
+                    if d['channels'] == 2 or '2CH' in name_upper:
+                        score += 200  # 2ch VB-Cable 最高优先级
+                    elif d['channels'] >= 16 or '16CH' in name_upper:
+                        score += 50   # 16ch 优先级降低
                 elif is_voicemeeter:
                     if 'INPUT' in name_upper and 'AUX' not in name_upper and 'OUT' not in name_upper:
                         score += 50
@@ -232,6 +232,65 @@ class DeviceManager:
             # 高采样率加分
             if d['sample_rate'] >= 48000:
                 score += 5
+            
+            # 2ch 设备额外加分（优先选择立体声设备）
+            if d['channels'] == 2 or '2CH' in name_upper:
+                score += 30  # 提高2ch优先级
+            
+            if score > best_score:
+                best_score = score
+                best_idx = idx
+        
+        return best_idx
+    
+    def _find_best_mpv_device(self, devices: List[Dict]) -> Optional[int]:
+        """
+        找到最佳 MPV 输入设备
+        推荐 VB-Cable 2ch Output（专用于 MPV 音乐）
+        
+        Returns:
+            最佳设备的序号 (1-based)，如果没有找到返回 None
+        """
+        best_idx = None
+        best_score = -1
+        
+        for idx, d in enumerate(devices, 1):
+            name_upper = d['name'].upper()
+            
+            # 识别设备类型
+            is_hifi_cable = 'HI-FI CABLE' in name_upper or 'HIFI CABLE' in name_upper
+            is_vb_cable = 'CABLE' in name_upper and not is_hifi_cable and 'VOICEMEETER' not in name_upper
+            is_voicemeeter = 'VOICEMEETER' in name_upper
+            
+            if not is_vb_cable and not is_voicemeeter and not is_hifi_cable:
+                continue
+            
+            score = 0
+            
+            # MPV 输入设备：从 MPV 接收音乐
+            # 推荐: VB-Cable 2ch Output（专用于 MPV，避免与 Clubdeck 冲突）
+            if is_vb_cable:
+                if d['channels'] == 2 or '2CH' in name_upper:
+                    score += 200  # VB-Cable 2ch 最高优先级
+                elif d['channels'] >= 16 or '16CH' in name_upper:
+                    score += 50   # 16ch 优先级降低
+            elif is_voicemeeter:
+                if 'OUT B2' in name_upper:
+                    score += 80
+                elif 'AUX OUT' in name_upper:
+                    score += 70
+                else:
+                    score += 30
+            elif is_hifi_cable:
+                score += 50  # Hi-Fi Cable 最低优先级（应该用于 Clubdeck）
+            
+            # 高采样率加分
+            if d['sample_rate'] >= 48000:
+                score += 5
+            
+            # 2ch 设备额外加分（优先选择立体声设备）
+            if d['channels'] == 2 or '2CH' in name_upper:
+                score += 30  # 提高2ch优先级
             
             if score > best_score:
                 best_score = score
@@ -244,7 +303,8 @@ class DeviceManager:
         交互式选择设备
         
         Returns:
-            (input_device_id, output_device_id, input_sample_rate, output_sample_rate, 
+            (input_device_id, output_device_id, 
+             input_sample_rate, output_sample_rate,
              input_channels, output_channels, browser_sample_rate)
         """
         console.print()
@@ -321,11 +381,13 @@ class DeviceManager:
         console.print(Panel(
             f"[green]✓ 输入设备:[/green] {selected_input['name']}\n"
             f"    {input_channels}ch @ {input_sample_rate}Hz\n"
+            f"    [dim](Clubdeck + MPV 已混合)[/dim]\n"
             f"[green]✓ 输出设备:[/green] {selected_output['name']}\n"
             f"    {output_channels}ch @ {output_sample_rate}Hz\n"
             f"[green]✓ 浏览器:[/green] {browser_channels}ch @ {browser_sample_rate}Hz\n"
-            f"[green]✓ 通信模式:[/green] {mode_text}",
-            title="设备配置确认 (自动转换采样率和声道)",
+            f"[green]✓ 通信模式:[/green] {mode_text}\n"
+            f"[green]✓ 架构:[/green] [cyan]简化单输入单输出[/cyan]",
+            title="设备配置确认",
             border_style="green"
         ))
         

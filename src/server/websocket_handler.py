@@ -35,7 +35,7 @@ class WebSocketHandler:
         # 服务端 Ducking (闪避) - 麦克风说话时降低接收音量
         self.ducking_enabled = True  # 是否启用闪避
         self.ducking_volume = 0.15   # 说话时的最低音量 (15%)
-        self.ducking_threshold = 500  # 音量阈值 (int16 范围)
+        self.ducking_threshold = 100  # 音量阈值 (int16 范围) - 降低以提高灵敏度
         self.is_speaking = False      # 当前是否在说话
         self.speaking_decay = 0       # 说话状态衰减计数
         self.speaking_decay_max = 30  # 衰减计数上限 (~300ms)
@@ -83,6 +83,7 @@ class WebSocketHandler:
             """接收浏览器音频并转发到 Clubdeck"""
             # 半双工模式下忽略浏览器麦克风
             if config.audio.duplex_mode == 'half':
+                console.print(f"[dim red]半双工模式，忽略浏览器音频[/dim red]")
                 return
             
             try:
@@ -90,14 +91,21 @@ class WebSocketHandler:
                 if audio_base64:
                     # 解码音频
                     audio_array = self.processor.base64_to_numpy(audio_base64)
+                    max_amplitude = np.max(np.abs(audio_array))
+                    
+                    # 调试：总是显示浏览器音频接收（每隔一段时间）
+                    import random
+                    if random.randint(1, 50) == 1:  # 1/50 概率显示
+                        console.print(f"[dim blue]浏览器音频接收: {max_amplitude} 幅度, {len(audio_array)} samples[/dim blue]")
                     
                     # 检测是否在说话（用于 ducking）
                     if self.ducking_enabled:
-                        max_amplitude = np.max(np.abs(audio_array))
                         with self._ducking_lock:
                             if max_amplitude > self.ducking_threshold:
                                 self.is_speaking = True
                                 self.speaking_decay = self.speaking_decay_max
+                                # 调试：显示检测到浏览器说话
+                                console.print(f"[dim blue]✔ 检测到浏览器说话: {max_amplitude} 幅度[/dim blue]")
                     
                     # 音频处理（降噪、滤波）
                     audio_array = self.processor.process_audio(audio_array)
