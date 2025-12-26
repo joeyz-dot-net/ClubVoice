@@ -4,11 +4,8 @@
         {
             "label": "Build EXE",
             "type": "shell",
-            "command": "pyinstaller VoiceCommunicationApp.spec -y; Write-Host ''; Write-Host '构建完成!' -ForegroundColor Green; Read-Host '按 Enter 键关闭窗口'",
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
+            "command": "pyinstaller ClubVoice.spec -y; if ($?) { $dest='\\\\b560\\code\\voice-communication-app'; $bak='\\\\b560\\code\\bak'; if (Test-Path $dest) { $timestamp=Get-Date -Format 'yyyyMMdd_HHmmss'; New-Item -ItemType Directory -Path $bak -Force | Out-Null; Copy-Item -Path $dest -Destination \"$bak\\voice-communication-app_$timestamp\" -Recurse -Force; Write-Host '旧版本已备份到 bak 目录' -ForegroundColor Yellow }; Copy-Item -Path .\\dist\\* -Destination $dest -Recurse -Force; Write-Host ''; Write-Host '构建完成并已复制到 \\\\b560\\code!' -ForegroundColor Green } else { Write-Host '构建失败!' -ForegroundColor Red }; Read-Host '按 Enter 键关闭窗口'",
+            "group": "build",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -23,7 +20,7 @@
         {
             "label": "Build and Copy Config",
             "type": "shell",
-            "command": "pyinstaller VoiceCommunicationApp.spec -y; Copy-Item config.json dist\\; Write-Host ''; Write-Host '构建完成!' -ForegroundColor Green; Read-Host '按 Enter 键关闭窗口'",
+            "command": "pyinstaller ClubVoice.spec -y; Copy-Item config.json dist\\; if ($?) { $dest='\\\\b560\\code\\voice-communication-app'; $bak='\\\\b560\\code\\bak'; if (Test-Path $dest) { $timestamp=Get-Date -Format 'yyyyMMdd_HHmmss'; New-Item -ItemType Directory -Path $bak -Force | Out-Null; Copy-Item -Path $dest -Destination \"$bak\\voice-communication-app_$timestamp\" -Recurse -Force; Write-Host '旧版本已备份到 bak 目录' -ForegroundColor Yellow }; Copy-Item -Path .\\dist\\* -Destination $dest -Recurse -Force; Write-Host ''; Write-Host '构建完成并已复制到 \\\\b560\\code!' -ForegroundColor Green } else { Write-Host '构建失败!' -ForegroundColor Red }; Read-Host '按 Enter 键关闭窗口'",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -57,7 +54,7 @@
         {
             "label": "Run EXE",
             "type": "shell",
-            "command": ".\\dist\\VoiceCommunicationApp.exe",
+            "command": ".\\dist\\ClubVoice.exe",
             "group": "test",
             "presentation": {
                 "echo": true,
@@ -87,8 +84,11 @@
         {
             "label": "Full Build",
             "type": "shell",
-            "command": "Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue; pyinstaller VoiceCommunicationApp.spec -y; Copy-Item config.json dist\\; Write-Host ''; Write-Host '构建完成!' -ForegroundColor Green; Read-Host '按 Enter 键关闭窗口'",
-            "group": "build",
+            "command": "Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue; pyinstaller ClubVoice.spec -y; Copy-Item config.json dist\\; if ($?) { $dest='\\\\b560\\code\\voice-communication-app'; $bak='\\\\b560\\code\\bak'; if (Test-Path $dest) { $timestamp=Get-Date -Format 'yyyyMMdd_HHmmss'; New-Item -ItemType Directory -Path $bak -Force | Out-Null; Copy-Item -Path $dest -Destination \"$bak\\voice-communication-app_$timestamp\" -Recurse -Force; Write-Host '旧版本已备份到 bak 目录' -ForegroundColor Yellow }; Copy-Item -Path .\\dist\\* -Destination $dest -Recurse -Force; Write-Host ''; Write-Host '构建完成并已复制到 \\\\b560\\code!' -ForegroundColor Green } else { Write-Host '构建失败!' -ForegroundColor Red }; Read-Host '按 Enter 键关闭窗口'",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
