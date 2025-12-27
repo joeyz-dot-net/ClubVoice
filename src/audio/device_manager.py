@@ -30,21 +30,23 @@ class DeviceManager:
         self.output_devices = []
         
         for i, device in enumerate(devices):
-            device_info = {
-                'id': i,
-                'name': device['name'],
-                'channels': device['max_input_channels'] if device['max_input_channels'] > 0 else device['max_output_channels'],
-                'sample_rate': int(device['default_samplerate'])
-            }
-            
             if device['max_input_channels'] > 0:
-                device_info['channels'] = device['max_input_channels']
-                self.input_devices.append(device_info)
+                input_info = {
+                    'id': i,
+                    'name': device['name'],
+                    'channels': device['max_input_channels'],
+                    'sample_rate': int(device['default_samplerate'])
+                }
+                self.input_devices.append(input_info)
             
             if device['max_output_channels'] > 0:
-                device_info_out = device_info.copy()
-                device_info_out['channels'] = device['max_output_channels']
-                self.output_devices.append(device_info_out)
+                output_info = {
+                    'id': i,
+                    'name': device['name'],
+                    'channels': device['max_output_channels'],
+                    'sample_rate': int(device['default_samplerate'])
+                }
+                self.output_devices.append(output_info)
     
     def get_vb_cable_devices(self) -> Tuple[List[Dict], List[Dict]]:
         """获取 VB-Cable 相关设备"""
@@ -176,6 +178,8 @@ class DeviceManager:
         找到最佳匹配的设备（Clubdeck 通信）
         双线缆方案：Hi-Fi Cable 用于 Clubdeck，VB-Cable 用于 MPV
         
+        优先级：优先选择不包含 16CH 的设备，次选 2ch 设备
+        
         Returns:
             最佳设备的序号 (1-based)，如果没有找到返回 None
         """
@@ -196,16 +200,23 @@ class DeviceManager:
             # 计算匹配分数
             score = 0
             
+            # 关键优先级：优先排除 16ch 设备
+            has_16ch = '16CH' in name_upper or d['channels'] >= 16
+            if has_16ch:
+                score -= 100  # 16ch 设备降低优先级
+            else:
+                score += 100  # 非 16ch 设备优先
+            
             if is_input:
                 # 输入设备：从 Clubdeck 接收音频
-                # 推荐: VB-Cable 2ch Output
+                # 推荐: VB-Cable 2ch Output (不带 16ch)
                 if is_hifi_cable:
-                    score += 150  # Hi-Fi Cable 优先级降低
+                    score += 150
                 elif is_vb_cable:
                     if d['channels'] == 2 or '2CH' in name_upper:
                         score += 200  # 2ch VB-Cable 最高优先级
-                    elif d['channels'] >= 16 or '16CH' in name_upper:
-                        score += 50   # 16ch 优先级降低
+                    elif not has_16ch:
+                        score += 120  # 其他非16ch设备
                 elif is_voicemeeter:
                     if 'OUT B2' in name_upper:
                         score += 50
@@ -215,14 +226,14 @@ class DeviceManager:
                         score += 10
             else:
                 # 输出设备：发送音频到 Clubdeck
-                # 推荐: VB-Cable 2ch Input
+                # 推荐: VB-Cable 2ch Input (不带 16ch)
                 if is_hifi_cable:
-                    score += 150  # Hi-Fi Cable 优先级降低
+                    score += 150
                 elif is_vb_cable:
                     if d['channels'] == 2 or '2CH' in name_upper:
                         score += 200  # 2ch VB-Cable 最高优先级
-                    elif d['channels'] >= 16 or '16CH' in name_upper:
-                        score += 50   # 16ch 优先级降低
+                    elif not has_16ch:
+                        score += 120  # 其他非16ch设备
                 elif is_voicemeeter:
                     if 'INPUT' in name_upper and 'AUX' not in name_upper and 'OUT' not in name_upper:
                         score += 50
@@ -235,7 +246,7 @@ class DeviceManager:
             
             # 2ch 设备额外加分（优先选择立体声设备）
             if d['channels'] == 2 or '2CH' in name_upper:
-                score += 30  # 提高2ch优先级
+                score += 30
             
             if score > best_score:
                 best_score = score

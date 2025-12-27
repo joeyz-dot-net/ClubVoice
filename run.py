@@ -26,10 +26,10 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         print("\n用户中断程序")
+        wait_for_exit(error=False)
     except SystemExit as e:
-        # 正常退出不需要等待
-        if e.code != 0:
-            wait_for_exit(error=True)
+        # 正常退出也等待用户确认
+        wait_for_exit(error=e.code != 0)
         sys.exit(e.code)
     except Exception as e:
         print(f"\n[错误] {type(e).__name__}: {e}")
