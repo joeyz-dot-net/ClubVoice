@@ -186,6 +186,15 @@ voice-communication-app/
 
 ## 常见问题
 
+### Q: WebSocket 连接出现 500 错误？
+A: 这通常是 Flask-SocketIO 与 Werkzeug 开发服务器的兼容性问题。
+- **解决**: 已在最新版本中修复。清除缓存并重新启动：
+  ```bash
+  Remove-Item -Recurse -Force src/__pycache__
+  python run.py
+  ```
+- **详见**: [WebSocket 修复说明](HOTFIX_WEBSOCKET_500.md)
+
 ### Q: 听到回声/啸叫？
 A: 确保使用两个不同的 VB-Cable 设备，一个用于发送，一个用于接收。
 

@@ -83,7 +83,8 @@ def main():
             host=config.server.host,
             port=config.server.port,
             debug=config.server.debug,
-            use_reloader=False
+            use_reloader=False,
+            allow_unsafe_werkzeug=True  # 允许在开发模式下使用 Werkzeug
         )
         
     except KeyboardInterrupt:
