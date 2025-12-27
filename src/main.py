@@ -23,10 +23,15 @@ def signal_handler(sig, frame):
     """处理退出信号"""
     console.print("\n[yellow]正在关闭服务...[/yellow]")
     
+    # 停止音频处理
     if ws_handler:
         ws_handler.stop()
     if bridge:
         bridge.stop()
+    
+    # 清理临时文件
+    from .utils.cleanup import cleanup_on_exit
+    cleanup_on_exit(verbose=False)
     
     sys.exit(0)
 
@@ -92,7 +97,23 @@ def main():
         console.print()
         import traceback
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        
+        # 错误退出时也清理临时文件
+        from .utils.cleanup import cleanup_on_exit
+        cleanup_on_exit(verbose=False)
         raise
+    finally:
+        # 确保无论如何都清理资源
+        if ws_handler:
+            try:
+                ws_handler.stop()
+            except:
+                pass
+        if bridge:
+            try:
+                bridge.stop()
+            except:
+                pass
 
 
 if __name__ == '__main__':

@@ -2,9 +2,9 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build EXE",
+            "label": "Build Only",
             "type": "shell",
-            "command": "pyinstaller ClubVoice.spec -y; if ($?) { $dest='\\\\b560\\code\\voice-communication-app'; $bak='\\\\b560\\code\\bak'; if (Test-Path $dest) { $timestamp=Get-Date -Format 'yyyyMMdd_HHmmss'; New-Item -ItemType Directory -Path $bak -Force | Out-Null; Copy-Item -Path $dest -Destination \"$bak\\voice-communication-app_$timestamp\" -Recurse -Force; Write-Host '旧版本已备份到 bak 目录' -ForegroundColor Yellow }; Copy-Item -Path .\\dist\\* -Destination $dest -Recurse -Force; Write-Host ''; Write-Host '构建完成并已复制到 \\\\b560\\code!' -ForegroundColor Green } else { Write-Host '构建失败!' -ForegroundColor Red }; Read-Host '按 Enter 键关闭窗口'",
+            "command": "pyinstaller ClubVoice.spec -y; Copy-Item config.json dist\\; if ($?) { Write-Host ''; Write-Host '本地构建完成！' -ForegroundColor Green; Write-Host '输出目录: .\\dist\\' -ForegroundColor Cyan } else { Write-Host '构建失败!' -ForegroundColor Red }",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -15,13 +15,13 @@
                 "clear": true
             },
             "problemMatcher": [],
-            "detail": "使用 PyInstaller 打包 EXE"
+            "detail": "仅构建 EXE（不部署）"
         },
         {
-            "label": "Build and Copy Config",
+            "label": "Deploy to B560",
             "type": "shell",
-            "command": "pyinstaller ClubVoice.spec -y; Copy-Item config.json dist\\; if ($?) { $dest='\\\\b560\\code\\voice-communication-app'; $bak='\\\\b560\\code\\bak'; if (Test-Path $dest) { $timestamp=Get-Date -Format 'yyyyMMdd_HHmmss'; New-Item -ItemType Directory -Path $bak -Force | Out-Null; Copy-Item -Path $dest -Destination \"$bak\\voice-communication-app_$timestamp\" -Recurse -Force; Write-Host '旧版本已备份到 bak 目录' -ForegroundColor Yellow }; Copy-Item -Path .\\dist\\* -Destination $dest -Recurse -Force; Write-Host ''; Write-Host '构建完成并已复制到 \\\\b560\\code!' -ForegroundColor Green } else { Write-Host '构建失败!' -ForegroundColor Red }; Read-Host '按 Enter 键关闭窗口'",
-            "group": "build",
+            "command": "$dest='\\\\b560\\code\\ClubVoice'; $source='.\\dist'; $timestamp=Get-Date -Format 'yyyyMMdd_HHmmss'; if (!(Test-Path $source)) { Write-Host '错误: dist 目录不存在，请先构建！' -ForegroundColor Red; Read-Host '按 Enter 键关闭窗口'; exit 1 }; if (!(Test-Path $dest)) { Write-Host '目标目录不存在，正在创建...' -ForegroundColor Yellow; New-Item -ItemType Directory -Path $dest -Force | Out-Null }; Write-Host ''; Write-Host '正在部署到 \\\\b560\\code\\ClubVoice...' -ForegroundColor Cyan; $renamedCount=0; Get-ChildItem -Path $source\\* -Recurse -File | ForEach-Object { $relativePath = $_.FullName.Replace((Get-Location).Path + '\\dist\\', ''); $destPath = Join-Path $dest $relativePath; $destDir = Split-Path $destPath -Parent; if (!(Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }; if (Test-Path $destPath) { $ext = $_.Extension; $nameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($destPath); $oldName = $nameWithoutExt + '_old_' + $timestamp + $ext; $oldPath = Join-Path (Split-Path $destPath -Parent) $oldName; Rename-Item -Path $destPath -NewName $oldName -Force; $renamedCount++; Write-Host ('  重命名旧文件: ' + $oldPath) -ForegroundColor Yellow }; Copy-Item -Path $_.FullName -Destination $destPath -Force; Write-Host ('  复制: ' + $destPath) -ForegroundColor Gray }; Write-Host ''; if ($renamedCount -gt 0) { Write-Host ('已重命名 ' + $renamedCount + ' 个旧文件') -ForegroundColor Yellow }; Write-Host '部署完成！' -ForegroundColor Green; Write-Host ('目标目录: ' + $dest) -ForegroundColor Cyan; Read-Host '按 Enter 键关闭窗口'",
+            "group": "none",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -31,7 +31,23 @@
                 "clear": true
             },
             "problemMatcher": [],
-            "detail": "打包 EXE 并复制配置文件到 dist 目录"
+            "detail": "将 dist 目录部署到 \\\\b560\\code\\ClubVoice"
+        },
+        {
+            "label": "Deploy to Local",
+            "type": "shell",
+            "command": "$dest='D:\\Code\\ClubVoice-Deploy'; $source='.\\dist'; if (!(Test-Path $source)) { Write-Host '错误: dist 目录不存在，请先构建！' -ForegroundColor Red; Read-Host '按 Enter 键关闭窗口'; exit 1 }; if (Test-Path $dest) { Write-Host '清理旧部署目录...' -ForegroundColor Yellow; Remove-Item -Path $dest -Recurse -Force }; Write-Host '创建部署目录...' -ForegroundColor Yellow; New-Item -ItemType Directory -Path $dest -Force | Out-Null; Write-Host ''; Write-Host '正在部署到 D:\\Code\\ClubVoice-Deploy...' -ForegroundColor Cyan; Get-ChildItem -Path $source\\* -Recurse | ForEach-Object { $relativePath = $_.FullName.Replace((Get-Location).Path + '\\dist\\', ''); $destPath = Join-Path $dest $relativePath; Write-Host \"  复制: $destPath\" -ForegroundColor Gray }; Copy-Item -Path $source\\* -Destination $dest -Recurse -Force; Write-Host ''; Write-Host '部署完成！' -ForegroundColor Green; Write-Host \"目标目录: $dest\" -ForegroundColor Cyan; Read-Host '按 Enter 键关闭窗口'",
+            "group": "none",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": [],
+            "detail": "将 dist 目录部署到 D:\\Code\\ClubVoice-Deploy"
         },
         {
             "label": "Run App",
@@ -83,22 +99,29 @@
         },
         {
             "label": "Full Build",
-            "type": "shell",
-            "command": "Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue; pyinstaller ClubVoice.spec -y; Copy-Item config.json dist\\; if ($?) { $dest='\\\\b560\\code\\voice-communication-app'; $bak='\\\\b560\\code\\bak'; if (Test-Path $dest) { $timestamp=Get-Date -Format 'yyyyMMdd_HHmmss'; New-Item -ItemType Directory -Path $bak -Force | Out-Null; Copy-Item -Path $dest -Destination \"$bak\\voice-communication-app_$timestamp\" -Recurse -Force; Write-Host '旧版本已备份到 bak 目录' -ForegroundColor Yellow }; Copy-Item -Path .\\dist\\* -Destination $dest -Recurse -Force; Write-Host ''; Write-Host '构建完成并已复制到 \\\\b560\\code!' -ForegroundColor Green } else { Write-Host '构建失败!' -ForegroundColor Red }; Read-Host '按 Enter 键关闭窗口'",
+            "dependsOn": [
+                "Clean Build",
+                "Build Only",
+                "Deploy to B560"
+            ],
+            "dependsOrder": "sequence",
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": false,
-                "clear": true
-            },
             "problemMatcher": [],
-            "detail": "清理 + 打包 + 复制配置文件"
+            "detail": "清理 + 构建 + 部署到 B560（默认）"
+        },
+        {
+            "label": "Build and Deploy Local",
+            "dependsOn": [
+                "Build Only",
+                "Deploy to Local"
+            ],
+            "dependsOrder": "sequence",
+            "group": "build",
+            "problemMatcher": [],
+            "detail": "构建 + 部署到本地 D:\\Code"
         }
     ]
 }

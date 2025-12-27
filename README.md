@@ -117,6 +117,22 @@ dist/VoiceCommunicationApp.exe
 
 VS Code 用户可使用 `Ctrl+Shift+B` 运行构建任务。
 
+### 清理临时文件
+
+程序退出时会自动清理 PyInstaller 解压的临时目录（系统 `%TEMP%` 下的 `_MEI*` 目录）。
+
+如需手动清理残留的旧临时目录，可以运行：
+
+```bash
+# 开发模式
+python cleanup.py
+
+# 或直接运行 EXE（从 dist/ 目录）
+ClubVoice.exe  # 退出时自动清理
+```
+
+**说明**：PyInstaller 打包的程序运行时会解压到系统临时目录（通常是 `C:\Users\<用户>\AppData\Local\Temp\_MEI*`）。程序正常退出时会自动清理，异常退出可能留下残留文件。
+
 ## 项目结构
 
 ```

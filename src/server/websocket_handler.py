@@ -203,6 +203,15 @@ class WebSocketHandler:
             self.forward_thread.join(timeout=2)
             self.forward_thread = None
         
+        # 清理所有客户端连接
+        self.connected_clients.clear()
+        
+        # 重置状态
+        self.is_speaking = False
+        self.speaking_decay = 0
+        self.current_volume = 1.0
+        self.target_volume = 1.0
+        
         console.print("[yellow]WebSocket 处理器已停止[/yellow]")
     
     @property

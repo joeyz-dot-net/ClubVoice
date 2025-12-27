@@ -240,31 +240,82 @@ class VBCableBridge:
         
         self.running = True
         
-        # 启动输入流 (从 Hi-Fi Cable 读取 Clubdeck 音频 + MPV 音乐)
-        self.input_stream = sd.InputStream(
-            device=self.input_device_id,
-            samplerate=self.input_sample_rate,
-            channels=self.input_channels,
-            dtype='int16',
-            blocksize=self.chunk_size,
-            callback=self._input_callback
-        )
-        self.input_stream.start()
-        console.print(f"[dim]✓ 输入流已启动: {self.input_sample_rate}Hz, {self.input_channels}ch, blocksize={self.chunk_size}[/dim]")
+        # 验证设备是否存在
+        try:
+            devices = sd.query_devices()
+            if self.input_device_id < 0 or self.input_device_id >= len(devices):
+                raise ValueError(f"输入设备 ID {self.input_device_id} 无效（总设备数: {len(devices)}）")
+            if self.output_device_id < 0 or self.output_device_id >= len(devices):
+                raise ValueError(f"输出设备 ID {self.output_device_id} 无效（总设备数: {len(devices)}）")
+        except Exception as e:
+            console.print(f"[red]设备验证失败: {e}[/red]")
+            self.running = False
+            raise
         
-        # 启动输出流 (向 Hi-Fi Cable 写入浏览器音频)
-        self.output_stream = sd.OutputStream(
-            device=self.output_device_id,
-            samplerate=self.output_sample_rate,
-            channels=self.output_channels,
-            dtype='int16',
-            blocksize=self.chunk_size,
-            callback=self._output_callback
-        )
-        self.output_stream.start()
-        console.print(f"[dim]✓ 输出流已启动: {self.output_sample_rate}Hz, {self.output_channels}ch, blocksize={self.chunk_size}[/dim]")
-        
-        console.print("[green]✓ 音频桥接已启动（简化架构，无 Python 混音）[/green]")
+        try:
+            # 启动输入流 (从 Hi-Fi Cable 读取 Clubdeck 音频 + MPV 音乐)
+            self.input_stream = sd.InputStream(
+                device=self.input_device_id,
+                samplerate=self.input_sample_rate,
+                channels=self.input_channels,
+                dtype='int16',
+                blocksize=self.chunk_size,
+                callback=self._input_callback
+            )
+            self.input_stream.start()
+            console.print(f"[dim]✓ 输入流已启动: {self.input_sample_rate}Hz, {self.input_channels}ch, blocksize={self.chunk_size}[/dim]")
+            
+            # 启动输出流 (向 Hi-Fi Cable 写入浏览器音频)
+            self.output_stream = sd.OutputStream(
+                device=self.output_device_id,
+                samplerate=self.output_sample_rate,
+                channels=self.output_channels,
+                dtype='int16',
+                blocksize=self.chunk_size,
+                callback=self._output_callback
+            )
+            self.output_stream.start()
+            console.print(f"[dim]✓ 输出流已启动: {self.output_sample_rate}Hz, {self.output_channels}ch, blocksize={self.chunk_size}[/dim]")
+            
+            console.print("[green]✓ 音频桥接已启动（简化架构，无 Python 混音）[/green]")
+        except Exception as e:
+            console.print(f"[red]启动音频流失败: {e}[/red]")
+            # 清理已启动的流
+            if self.input_stream:
+                try:
+                    self.input_stream.stop()
+                    self.input_stream.close()
+                except:
+                    pass
+            if self.output_stream:
+                try:
+                    self.output_stream.stop()
+                    self.output_stream.close()
+                except:
+                    pass
+            self.input_stream = None
+            self.output_stream = None
+            self.running = False
+            raise
+        except Exception as e:
+            console.print(f"[red]启动音频流失败: {e}[/red]")
+            # 清理已启动的流
+            if self.input_stream:
+                try:
+                    self.input_stream.stop()
+                    self.input_stream.close()
+                except:
+                    pass
+            if self.output_stream:
+                try:
+                    self.output_stream.stop()
+                    self.output_stream.close()
+                except:
+                    pass
+            self.input_stream = None
+            self.output_stream = None
+            self.running = False
+            raise
     
     def stop(self) -> None:
         """停止音频桥接"""
@@ -279,6 +330,12 @@ class VBCableBridge:
             self.output_stream.stop()
             self.output_stream.close()
             self.output_stream = None
+        
+        # 清理音频队列
+        self.clear_queues()
+        
+        # 清空缓冲区
+        self.output_buffer = np.zeros(0, dtype=np.int16)
         
         console.print("[yellow]音频桥接已停止[/yellow]")
     
