@@ -288,8 +288,43 @@ def run_server(hls_dir: str, host: str, port: int, cert: str | None = None, key:
 
     @app.route('/')
     def index():
-                # serve the external player.html from repo root
-                return send_from_directory(os.path.abspath(os.path.join(os.getcwd())), 'player.html')
+                # serve the external player.html
+                # Try multiple locations so the file is found when running from source
+                # or when bundled by PyInstaller (uses sys._MEIPASS)
+                candidates = []
+                try:
+                    cwd = os.getcwd()
+                    candidates.append(os.path.join(cwd, 'player.html'))
+                except Exception:
+                    pass
+                # PyInstaller extracts datas to _MEIPASS
+                try:
+                    meipass = getattr(sys, '_MEIPASS', None)
+                    if meipass:
+                        candidates.append(os.path.join(meipass, 'player.html'))
+                except Exception:
+                    pass
+                # executable directory (when running as EXE)
+                try:
+                    if getattr(sys, 'frozen', False):
+                        exe_dir = os.path.dirname(sys.executable)
+                        candidates.append(os.path.join(exe_dir, 'player.html'))
+                except Exception:
+                    pass
+
+                for p in candidates:
+                    if p and os.path.exists(p):
+                        return send_from_directory(os.path.dirname(p), os.path.basename(p))
+
+                # fallback: try repo root relative to this file
+                try:
+                    repo_player = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'player.html')
+                    if os.path.exists(repo_player):
+                        return send_from_directory(os.path.dirname(repo_player), os.path.basename(repo_player))
+                except Exception:
+                    pass
+
+                return 'player.html not found on server', 404
 
     @app.route('/player')
     def player():
@@ -477,6 +512,24 @@ def main():
         writer.stop()
         try:
             ffmpeg_proc.terminate()
+        except Exception:
+            pass
+        # Keep the HLS directory and its contents intact for inspection
+        try:
+            print(f'[CLEANUP] Leaving hls directory intact: {hls_dir}')
+        except Exception:
+            pass
+
+        for tmp in ('test_capture.wav', 'test_sd.wav'):
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+                    print(f'[CLEANUP] Removed {tmp}')
+            except Exception:
+                pass
+
+        try:
+            input('Press Enter to exit...')
         except Exception:
             pass
         sys.exit(0)

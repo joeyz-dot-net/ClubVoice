@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['src\\hls_streamer.py'],
+    ['run.py'],
     pathex=[],
     binaries=[],
     datas=[('D:\\Code\\ClubVoice\\player.html', '.'), ('D:\\Code\\ClubVoice\\ffmpeg.exe', '.'), ('D:\\Code\\ClubVoice\\settings.ini', '.'), ('D:\\Code\\ClubVoice\\hls', 'hls')],
-    hiddenimports=[],
+    hiddenimports=['hls_streamer', 'src.hls_streamer'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

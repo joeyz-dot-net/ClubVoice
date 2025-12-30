@@ -17,7 +17,7 @@ if ERRORLEVEL 1 (
 )
 
 REM Set variables
-set SRC=src\hls_streamer.py
+set SRC=run.py
 set OUTNAME=ClubVoiceStreamer
 set BASEDIR=%~dp0
 set PLAYER=%BASEDIR%player.html
@@ -33,6 +33,8 @@ if exist %OUTNAME%.spec del /f /q %OUTNAME%.spec
 REM Run pyinstaller
 REM Note: on Windows the --add-data separator is a semicolon: SOURCE;DEST
 pyinstaller --noconfirm --onefile ^
+    --hidden-import hls_streamer ^
+    --hidden-import src.hls_streamer ^
     --add-data "%PLAYER%;." ^
     --add-data "%FFMPEG%;." ^
     --add-data "%SETTINGS%;." ^
@@ -45,10 +47,9 @@ if ERRORLEVEL 1 (
     exit /b 1
 )
 
-REM Move the final exe to repo root for convenience
+REM The EXE is produced into the dist\ folder by PyInstaller.
 if exist dist\%OUTNAME%.exe (
-    move /Y dist\%OUTNAME%.exe %BASEDIR%
-    echo EXE created: %BASEDIR%%OUTNAME%.exe
+    echo EXE created: %BASEDIR%dist\%OUTNAME%.exe
 ) else (
     echo Build succeeded but EXE not found in dist\ folder.
 )

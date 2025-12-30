@@ -41,9 +41,12 @@ def main():
             if choice == '' or choice == '1':
                 try:
                     from hls_streamer import main as streamer_main
-                except Exception as e:
-                    print('Failed to import hls_streamer from src/:', e)
-                    raise
+                except Exception:
+                    try:
+                        from src.hls_streamer import main as streamer_main
+                    except Exception as e:
+                        print('Failed to import hls_streamer module:', e)
+                        raise
                 streamer_main()
                 break
             elif choice == '2':
