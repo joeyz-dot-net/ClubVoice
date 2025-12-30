@@ -342,20 +342,19 @@ class DeviceManager:
         
         console.print()
         
-        # 找到最佳输出设备
+        # 自动选择最佳输出设备（发送音频到 Clubdeck）
         default_output = self._find_best_device(self.output_devices, is_input=False)
-        
-        console.print("[bold yellow]选择输出设备[/bold yellow] [dim](发送音频到 Clubdeck)[/dim]")
         if default_output:
-            best_device = self.output_devices[default_output - 1]
-            console.print(f"[bold green]★ 推荐: {default_output} - {best_device['name'][:40]}[/bold green]")
-        
-        output_choice = IntPrompt.ask(
-            "请输入序号",
-            default=default_output if default_output else 1,
-            choices=[str(i) for i in range(1, len(self.output_devices) + 1)]
-        )
-        selected_output = self.output_devices[output_choice - 1]
+            selected_output = self.output_devices[default_output - 1]
+            console.print(f"[dim]输出设备已自动选择: {default_output} - {selected_output['name'][:40]}[/dim]")
+        else:
+            # 若没有推荐设备，回退到第一个可用输出设备
+            if self.output_devices:
+                selected_output = self.output_devices[0]
+                console.print(f"[dim]输出设备未检测到推荐，使用第一个可用输出: {selected_output['name'][:40]}[/dim]")
+            else:
+                # 无可用输出设备，设置为 None 并在后续处理时抛错
+                selected_output = {'id': None, 'name': 'N/A', 'channels': 0, 'sample_rate': 48000}
         
         console.print()
         
