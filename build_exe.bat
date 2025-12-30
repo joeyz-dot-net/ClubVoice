@@ -56,4 +56,3 @@ if exist dist\%OUTNAME%.exe (
 
 echo Done.
 ENDLOCAL
-pause
