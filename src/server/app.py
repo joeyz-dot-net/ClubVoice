@@ -155,4 +155,11 @@ def audio_stream():
 
 def create_app():
     """创建应用"""
+    # register optional WebRTC broadcaster blueprint if available
+    try:
+        from .webrtc_broadcaster import bp as webrtc_bp
+        app.register_blueprint(webrtc_bp, url_prefix='')
+    except Exception:
+        pass
+
     return app, socketio
