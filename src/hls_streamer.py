@@ -34,6 +34,7 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 from flask import Flask, send_from_directory
+import configparser
 try:
     import soundcard as sc
 except Exception:
@@ -287,29 +288,8 @@ def run_server(hls_dir: str, host: str, port: int, cert: str | None = None, key:
 
     @app.route('/')
     def index():
-        # return built-in player HTML
-        html = '''<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>HLS Player</title></head>
-<body>
-<h3>HLS Test Player</h3>
-<video id="video" controls autoplay style="width:80%;height:60%;background:#000"></video>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
-<script>
-const video = document.getElementById('video');
-const url = '/stream.m3u8';
-if (Hls.isSupported()) {
-  const hls = new Hls();
-  hls.loadSource(url);
-  hls.attachMedia(video);
-  hls.on(Hls.Events.ERROR, function(e,data){console.warn('hls error', e, data)});
-} else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-  video.src = url;
-}
-</script>
-</body>
-</html>'''
-        return html
+                # serve the external player.html from repo root
+                return send_from_directory(os.path.abspath(os.path.join(os.getcwd())), 'player.html')
 
     @app.route('/player')
     def player():
@@ -332,6 +312,44 @@ if (Hls.isSupported()) {
 
 
 def main():
+    # load defaults from settings.ini (section [settings]) if present
+    config = configparser.ConfigParser()
+    config.read('settings.ini')
+    cfg_defaults: dict = {}
+    if 'settings' in config:
+        raw = config['settings']
+        # map known keys and convert types
+        def _bool(v):
+            return str(v).lower() in ('1', 'true', 'yes', 'on')
+        type_map = {
+            'device_name': str,
+            'device_id': int,
+            'wasapi': _bool,
+            'sd_test': _bool,
+            'sample_rate': int,
+            'channels': int,
+            'chunk_size': int,
+            'hls_dir': str,
+            'ffmpeg': str,
+            'bitrate': str,
+            'host': str,
+            'port': int,
+            'cert': str,
+            'key': str,
+            'gain': float,
+        }
+        for k, v in raw.items():
+            key = k.strip()
+            if key in type_map:
+                try:
+                    cfg_defaults[key] = type_map[key](v)
+                except Exception:
+                    cfg_defaults[key] = v
+            else:
+                cfg_defaults[key] = v
+
+   
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--device-name', type=str, help='Partial device name to match VB-Cable')
     parser.add_argument('--device-id', type=int, help='Sounddevice device id (overrides name)')
@@ -349,6 +367,9 @@ def main():
     parser.add_argument('--cert', type=str, help='Path to cert.pem for HTTPS')
     parser.add_argument('--key', type=str, help='Path to key.pem for HTTPS')
 
+    # apply settings.ini defaults (CLI overrides them)
+    if cfg_defaults:
+        parser.set_defaults(**cfg_defaults)
     args = parser.parse_args()
     if args.sd_test:
         import wave
