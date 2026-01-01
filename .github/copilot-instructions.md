@@ -39,14 +39,14 @@ python run.py  # Launches interactive device selector, then starts server on por
 
 ### Build & Deploy (PyInstaller)
 Tasks in `.vscode/tasks.json` handle the full build pipeline:
-- **Full Build** (default): Clean → pyinstaller → copy config.json → backup old version → deploy to `\\b560\code\voice-communication-app`
+- **Full Build** (default): Clean → pyinstaller → copy config.ini → backup old version → deploy to `\\b560\code\voice-communication-app`
 - **Build EXE**: Same as Full Build but without cleaning
 - **Run App**: Direct Python execution for debugging
 - **Run EXE**: Execute built executable from dist/
 
 Build configuration in [ClubVoice.spec](ClubVoice.spec):
 - Entry point: run.py
-- Bundled: static/ folder, config.json
+- Bundled: static/ folder, config.ini
 - Hidden imports: engineio.async_drivers.threading, rich modules
 - Console mode enabled (shows CLI device selector)
 
@@ -66,8 +66,8 @@ Build configuration in [ClubVoice.spec](ClubVoice.spec):
 ## Project-Specific Conventions
 
 ### Configuration Management
-- [config.json](config.json): Server host/port, duplex mode ('half' = listen-only, 'full' = bidirectional), MPV pipe settings
-- [src/config/settings.py](src/config/settings.py): Dataclasses for AudioConfig, ServerConfig with defaults
+- [config.ini](../config.ini): Server host/port, duplex mode ('half' = listen-only, 'full' = bidirectional), MPV pipe settings, mixing mode
+- [src/config/settings.py](../src/config/settings.py): Dataclasses for AudioConfig, ServerConfig with defaults
 - Device IDs and sample rates configured at runtime via Bootstrap CLI, not persisted
 
 ### Audio Processing Patterns

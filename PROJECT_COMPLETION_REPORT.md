@@ -211,7 +211,7 @@ Ctrl+Shift+B  # 选择 "Full Build"
 
 # 方法 2: 命令行
 pyinstaller ClubVoice.spec -y
-Copy-Item config.json dist\
+Copy-Item config.ini dist\
 Copy-Item -Path .\dist\* -Destination '\\b560\code\voice-communication-app' -Recurse -Force
 ```
 
@@ -387,7 +387,7 @@ ClubVoice/
 │   └── copilot-instructions.md (✅ 新建，130+ 行)
 ├── .vscode/
 │   └── tasks.json (✅ 已改进)
-├── config.json
+├── config.ini
 ├── ClubVoice.spec
 ├── run.py (✅ 已改进)
 ├── README.md

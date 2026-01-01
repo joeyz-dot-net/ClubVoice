@@ -1,7 +1,7 @@
 """
 音频配置管理
 """
-import json
+import configparser
 import os
 import sys
 from dataclasses import dataclass, field
@@ -17,24 +17,29 @@ def get_config_path() -> Path:
     else:
         base_path = Path(__file__).parent.parent.parent
     
-    return base_path / 'config.json'
+    return base_path / 'config.ini'
 
 
 @dataclass
 class AudioConfig:
     """音频配置"""
-    input_device_id: Optional[int] = None   # Hi-Fi Cable Output (从 Clubdeck 接收，已包含 MPV 音乐)
+    input_device_id: Optional[int] = None   # 第一个输入设备ID
     output_device_id: Optional[int] = None  # Hi-Fi Cable Input (发送浏览器音频到 Clubdeck)
     sample_rate: int = 48000                # 浏览器端采样率
-    input_sample_rate: int = 48000          # 输入设备采样率
+    input_sample_rate: int = 48000          # 输入设备1采样率
     output_sample_rate: int = 48000         # 输出设备采样率
     channels: int = 2                       # 浏览器端声道数（始终立体声）
-    input_channels: int = 2                 # 输入设备声道数
+    input_channels: int = 2                 # 输入设备1声道数
     output_channels: int = 2                # 输出设备声道数
     chunk_size: int = 512                   # 减小缓冲区以降低延迟
     bitrate: int = 128000                   # 128kbps
     dtype: str = 'int16'                    # 数据类型
     duplex_mode: str = 'half'               # 通信模式: 'half' = 半双工, 'full' = 全双工
+    # 混音模式参数
+    mix_mode: bool = False                  # 是否启用混音模式
+    input_device_id_2: Optional[int] = None # 第二个输入设备ID
+    input_sample_rate_2: int = 48000        # 输入设备2采样率
+    input_channels_2: int = 2               # 输入设备2声道数
 
 
 @dataclass
@@ -61,24 +66,37 @@ class AppConfig:
             return self
         
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            parser = configparser.ConfigParser()
+            parser.read(config_path, encoding='utf-8')
             
             # 加载服务器配置
-            if 'server' in data:
-                server_data = data['server']
-                self.server.host = server_data.get('host', self.server.host)
-                self.server.port = server_data.get('port', self.server.port)
-                self.server.debug = server_data.get('debug', self.server.debug)
+            if 'server' in parser:
+                self.server.host = parser.get('server', 'host', fallback=self.server.host)
+                self.server.port = parser.getint('server', 'port', fallback=self.server.port)
+                self.server.debug = parser.getboolean('server', 'debug', fallback=self.server.debug)
             
-            # 加载音频通信模式
-            if 'audio' in data:
-                audio_data = data['audio']
-                self.audio.duplex_mode = audio_data.get('duplex_mode', 'half')
+            # 加载音频通信模式和设备ID
+            if 'audio' in parser:
+                self.audio.duplex_mode = parser.get('audio', 'duplex_mode', fallback='half')
+                input_device_id = parser.get('audio', 'input_device_id', fallback=None)
+                if input_device_id is not None:
+                    try:
+                        self.audio.input_device_id = int(input_device_id)
+                    except ValueError:
+                        pass
+                
+                # 加载混音配置
+                self.audio.mix_mode = parser.getboolean('audio', 'mix_mode', fallback=False)
+                input_device_id_2 = parser.get('audio', 'input_device_id_2', fallback=None)
+                if input_device_id_2 is not None:
+                    try:
+                        self.audio.input_device_id_2 = int(input_device_id_2)
+                    except ValueError:
+                        pass
             
             print(f"[✓] 已从 {config_path} 加载服务器配置")
             
-        except json.JSONDecodeError as e:
+        except configparser.Error as e:
             print(f"[错误] 配置文件格式错误: {e}")
         except Exception as e:
             print(f"[错误] 加载配置文件失败: {e}")
@@ -102,17 +120,37 @@ class AppConfig:
         if config_path is None:
             config_path = get_config_path()
         
-        data = {
-            'server': {
-                'host': self.server.host,
-                'port': self.server.port,
-                'debug': self.server.debug
-            }
+        parser = configparser.ConfigParser()
+        
+        # 服务器配置
+        parser['server'] = {
+            'host': self.server.host,
+            'port': str(self.server.port),
+            'debug': str(self.server.debug).lower()
+        }
+        
+        # 音频配置
+        audio_section = {
+            'duplex_mode': self.audio.duplex_mode,
+            'mix_mode': str(self.audio.mix_mode).lower()
+        }
+        if self.audio.input_device_id is not None:
+            audio_section['input_device_id'] = str(self.audio.input_device_id)
+        if self.audio.input_device_id_2 is not None:
+            audio_section['input_device_id_2'] = str(self.audio.input_device_id_2)
+        parser['audio'] = audio_section
+        
+        # MPV配置（如果存在）
+        parser['mpv'] = {
+            'enabled': 'true',
+            'default_pipe': '\\\\.\\pipe\\mpv-pipe',
+            'ducking_volume': '15',
+            'normal_volume': '100'
         }
         
         try:
             with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
+                parser.write(f)
             print(f"[✓] 配置已保存到 {config_path}")
         except Exception as e:
             print(f"[错误] 保存配置文件失败: {e}")

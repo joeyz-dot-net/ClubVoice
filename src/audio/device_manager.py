@@ -204,9 +204,12 @@ class DeviceManager:
         
         return best_device
     
-    def interactive_select(self) -> Tuple[int, int, int]:
+    def interactive_select(self, default_device_id: int = None) -> Tuple[int, int, int]:
         """
         交互式选择设备（仅输入设备）
+        
+        Args:
+            default_device_id: 默认设备ID（从配置文件读取）
         
         Returns:
             (input_device_id, input_sample_rate, input_channels)
@@ -215,8 +218,11 @@ class DeviceManager:
         self.display_devices()
         console.print()
         
-        # 自动检测最佳输入设备（有输入通道的设备）
-        default_input_id = self._find_best_device("input")
+        # 如果提供了默认设备ID并且有效，使用它；否则自动检测
+        if default_device_id is not None and self.validate_device(default_device_id, is_input=True):
+            default_input_id = default_device_id
+        else:
+            default_input_id = self._find_best_device("input")
         
         console.print("[bold yellow]选择输入设备[/bold yellow] [dim](从 Clubdeck 接收音频)[/dim]")
         if default_input_id is not None:
@@ -269,3 +275,10 @@ class DeviceManager:
                 return device['output_channels'] > 0
         except Exception:
             return False
+    
+    def get_device_info(self, device_id: int) -> Optional[dict]:
+        """获取设备信息"""
+        try:
+            return next((d for d in self.all_devices if d['id'] == device_id), None)
+        except Exception:
+            return None

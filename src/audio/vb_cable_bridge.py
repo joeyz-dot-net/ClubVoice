@@ -16,7 +16,7 @@ console = Console()
 
 
 class VBCableBridge:
-    """VB-Cable 音频桥接器 - 单向接收模式"""
+    """VB-Cable 音频桥接器 - 支持单/双输入混音模式"""
     
     def __init__(
         self,
@@ -28,7 +28,12 @@ class VBCableBridge:
         chunk_size: int = 512,
         output_device_id: Optional[int] = None,  # 可选：保持向后兼容
         output_sample_rate: Optional[int] = None,
-        output_channels: Optional[int] = None
+        output_channels: Optional[int] = None,
+        # 混音参数
+        input_device_id_2: Optional[int] = None,  # 第二个输入设备ID（混音模式）
+        input_sample_rate_2: Optional[int] = None,  # 第二个设备采样率
+        input_channels_2: Optional[int] = None,     # 第二个设备声道数
+        mix_mode: bool = False  # 是否启用混音模式
     ):
         self.input_device_id = input_device_id
         self.output_device_id = output_device_id  # 现在是可选的
@@ -40,24 +45,41 @@ class VBCableBridge:
         self.browser_channels = browser_channels
         self.chunk_size = chunk_size
         
+        # 混音模式配置
+        self.mix_mode = mix_mode
+        self.input_device_id_2 = input_device_id_2
+        self.input_sample_rate_2 = input_sample_rate_2 or input_sample_rate
+        self.input_channels_2 = input_channels_2 or input_channels
+        
         self.processor = AudioProcessor(browser_sample_rate, browser_channels)
         
-        # 音频队列 - 只保留输入队列（单向接收）
-        self.input_queue: queue.Queue = queue.Queue(maxsize=200)   # 从 Clubdeck 接收
+        # 音频队列
+        self.input_queue: queue.Queue = queue.Queue(maxsize=200)   # 从设备1接收
+        self.input_queue_2: queue.Queue = queue.Queue(maxsize=200) if mix_mode else None  # 从设备2接收
+        self.mixed_queue: queue.Queue = queue.Queue(maxsize=200)   # 混音后的输出队列
         
         # 状态
         self.running = False
         self.input_stream: Optional[sd.InputStream] = None
+        self.input_stream_2: Optional[sd.InputStream] = None  # 第二个输入流
         self.output_stream: Optional[sd.OutputStream] = None  # 保留但可能不使用
+        
+        # 混音线程
+        self.mixer_thread: Optional[threading.Thread] = None
         
         # 回调
         self.on_audio_received: Optional[Callable[[np.ndarray], None]] = None
         
         console.print(f"[dim]音频桥接器配置:[/dim]")
-        console.print(f"[dim]  输入: {input_channels}ch @ {input_sample_rate}Hz (从 Clubdeck 接收)[/dim]")
+        console.print(f"[dim]  输入1: {input_channels}ch @ {input_sample_rate}Hz (设备 {input_device_id})[/dim]")
+        if mix_mode and input_device_id_2 is not None:
+            console.print(f"[dim]  输入2: {self.input_channels_2}ch @ {self.input_sample_rate_2}Hz (设备 {input_device_id_2})[/dim]")
         console.print(f"[dim]  浏览器: {browser_channels}ch @ {browser_sample_rate}Hz[/dim]")
         console.print(f"[dim]  Chunk Size: {chunk_size} frames[/dim]")
-        console.print(f"[yellow]✓ 模式: 单向接收（仅监听）[/yellow]")
+        if mix_mode:
+            console.print(f"[yellow]✓ 模式: 双输入混音[/yellow]")
+        else:
+            console.print(f"[yellow]✓ 模式: 单向接收（仅监听）[/yellow]")
     
     def _resample(self, audio_data: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
         """简单的线性插值重采样"""
@@ -152,9 +174,9 @@ class VBCableBridge:
             return multi
     
     def _input_callback(self, indata: np.ndarray, frames: int, time_info, status):
-        """输入流回调 - 接收 Clubdeck 音频（已包含 MPV 混音）并发送到浏览器"""
+        """输入流1回调 - 接收第一个设备音频"""
         if status:
-            console.print(f"[yellow]输入状态: {status}[/yellow]")
+            console.print(f"[yellow]输入1状态: {status}[/yellow]")
         
         # 正确处理数据类型 - indata 是 int16 格式
         audio_data = indata.copy().astype(np.int16)
@@ -171,11 +193,75 @@ class VBCableBridge:
                 self.browser_channels
             )
         
-        # 3. 放入队列供浏览器读取
+        # 3. 放入对应队列
         try:
-            self.input_queue.put_nowait(stereo_data)
+            if self.mix_mode:
+                self.input_queue.put_nowait(stereo_data)
+            else:
+                # 单输入模式：直接放入混音队列
+                self.mixed_queue.put_nowait(stereo_data)
         except queue.Full:
             pass  # 队列满时丢弃
+    
+    def _input_callback_2(self, indata: np.ndarray, frames: int, time_info, status):
+        """输入流2回调 - 接收第二个设备音频"""
+        if status:
+            console.print(f"[yellow]输入2状态: {status}[/yellow]")
+        
+        # 正确处理数据类型 - indata 是 int16 格式
+        audio_data = indata.copy().astype(np.int16)
+        
+        # 1. 先转换为立体声（浏览器端格式）
+        stereo_data = self._convert_to_stereo(audio_data, self.input_channels_2)
+        
+        # 2. 如果采样率不同，进行重采样
+        if self.input_sample_rate_2 != self.browser_sample_rate:
+            stereo_data = self._resample_stereo(
+                stereo_data.flatten(), 
+                self.input_sample_rate_2, 
+                self.browser_sample_rate,
+                self.browser_channels
+            )
+        
+        # 3. 放入第二个输入队列
+        try:
+            self.input_queue_2.put_nowait(stereo_data)
+        except queue.Full:
+            pass  # 队列满时丢弃
+    
+    def _mixer_worker(self):
+        """混音工作线程 - 混合两个输入队列的音频"""
+        console.print(f"[dim]✓ 混音线程已启动[/dim]")
+        
+        while self.running:
+            try:
+                # 从两个输入队列获取数据
+                audio1 = self.input_queue.get(timeout=0.05)
+                audio2 = self.input_queue_2.get(timeout=0.05)
+                
+                # 确保形状一致
+                if audio1.shape != audio2.shape:
+                    # 调整到相同长度（取较短的）
+                    min_len = min(len(audio1.flatten()), len(audio2.flatten()))
+                    audio1 = audio1.flatten()[:min_len].reshape(-1, self.browser_channels)
+                    audio2 = audio2.flatten()[:min_len].reshape(-1, self.browser_channels)
+                
+                # 混音：平均混合（避免削波）
+                mixed = ((audio1.astype(np.int32) + audio2.astype(np.int32)) // 2).astype(np.int16)
+                
+                # 放入混音队列
+                try:
+                    self.mixed_queue.put_nowait(mixed)
+                except queue.Full:
+                    pass
+                    
+            except queue.Empty:
+                continue
+            except Exception as e:
+                if self.running:
+                    console.print(f"[red]混音错误: {e}[/red]")
+        
+        console.print(f"[dim]✓ 混音线程已停止[/dim]")
     
     def _mpv_callback(self, indata: np.ndarray, frames: int, time_info, status):
         """MPV 输入流回调 - 接收 MPV 音乐，缓存以供混音使用"""
@@ -251,7 +337,7 @@ class VBCableBridge:
             raise
         
         try:
-            # 启动输入流 (从 Clubdeck 接收音频)
+            # 启动输入流1
             self.input_stream = sd.InputStream(
                 device=self.input_device_id,
                 samplerate=self.input_sample_rate,
@@ -261,7 +347,24 @@ class VBCableBridge:
                 callback=self._input_callback
             )
             self.input_stream.start()
-            console.print(f"[dim]✓ 输入流已启动: {self.input_sample_rate}Hz, {self.input_channels}ch, blocksize={self.chunk_size}[/dim]")
+            console.print(f"[dim]✓ 输入流1已启动: 设备 {self.input_device_id}, {self.input_sample_rate}Hz, {self.input_channels}ch[/dim]")
+            
+            # 如果启用混音模式，启动第二个输入流
+            if self.mix_mode and self.input_device_id_2 is not None:
+                self.input_stream_2 = sd.InputStream(
+                    device=self.input_device_id_2,
+                    samplerate=self.input_sample_rate_2,
+                    channels=self.input_channels_2,
+                    dtype='int16',
+                    blocksize=self.chunk_size,
+                    callback=self._input_callback_2
+                )
+                self.input_stream_2.start()
+                console.print(f"[dim]✓ 输入流2已启动: 设备 {self.input_device_id_2}, {self.input_sample_rate_2}Hz, {self.input_channels_2}ch[/dim]")
+                
+                # 启动混音线程
+                self.mixer_thread = threading.Thread(target=self._mixer_worker, daemon=True)
+                self.mixer_thread.start()
             
             # 只在双向模式时启动输出流
             if self.output_device_id is not None:
@@ -322,10 +425,19 @@ class VBCableBridge:
         """停止音频桥接"""
         self.running = False
         
+        # 等待混音线程结束
+        if self.mixer_thread and self.mixer_thread.is_alive():
+            self.mixer_thread.join(timeout=1.0)
+        
         if self.input_stream:
             self.input_stream.stop()
             self.input_stream.close()
             self.input_stream = None
+        
+        if self.input_stream_2:
+            self.input_stream_2.stop()
+            self.input_stream_2.close()
+            self.input_stream_2 = None
         
         if self.output_stream:
             self.output_stream.stop()
@@ -348,9 +460,9 @@ class VBCableBridge:
             pass
     
     def receive_from_clubdeck(self, timeout: float = 0.1) -> Optional[np.ndarray]:
-        """从 Clubdeck 接收音频 (通过 VB-Cable)"""
+        """从 Clubdeck 接收音频 (混音后或单输入)"""
         try:
-            return self.input_queue.get(timeout=timeout)
+            return self.mixed_queue.get(timeout=timeout)
         except queue.Empty:
             return None
     
@@ -359,5 +471,18 @@ class VBCableBridge:
         while not self.input_queue.empty():
             try:
                 self.input_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        if self.input_queue_2 is not None:
+            while not self.input_queue_2.empty():
+                try:
+                    self.input_queue_2.get_nowait()
+                except queue.Empty:
+                    break
+        
+        while not self.mixed_queue.empty():
+            try:
+                self.mixed_queue.get_nowait()
             except queue.Empty:
                 break

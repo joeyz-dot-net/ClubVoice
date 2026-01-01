@@ -109,7 +109,7 @@ socketio.run(
 
 4. **尝试不同端口**
    ```bash
-   # 编辑 config.json，改变端口
+   # 编辑 config.ini，改变端口
    "port": 5001  # 改为其他未被占用的端口
    ```
 

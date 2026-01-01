@@ -5,7 +5,7 @@ a = Analysis(
     ['run.py'],
     pathex=[],
     binaries=[],
-    datas=[('static', 'static'), ('config.json', '.')],
+    datas=[('static', 'static'), ('config.ini', '.')],
     hiddenimports=['engineio.async_drivers.threading', 'rich.console', 'rich.table', 'rich.panel', 'rich.prompt'],
     hookspath=[],
     hooksconfig={},
