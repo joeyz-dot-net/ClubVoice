@@ -36,18 +36,14 @@ class Bootstrap:
         """选择音频设备"""
         console.print("[bold]步骤 1/2: 配置音频设备[/bold]\n")
         
-        (input_id, output_id, input_sample_rate, output_sample_rate,
-         input_channels, output_channels, browser_sample_rate) = self.device_manager.interactive_select()
+        (input_id, input_sample_rate, input_channels) = self.device_manager.interactive_select()
         
         return AudioConfig(
             input_device_id=input_id,
-            output_device_id=output_id,
-            sample_rate=browser_sample_rate,
+            sample_rate=48000,  # 浏览器端使用 48kHz
             input_sample_rate=input_sample_rate,
-            output_sample_rate=output_sample_rate,
             channels=2,  # 浏览器端始终立体声
-            input_channels=input_channels,
-            output_channels=output_channels
+            input_channels=input_channels
         )
     
     def _display_summary(self, audio_config: AudioConfig):
@@ -61,12 +57,10 @@ class Bootstrap:
 [cyan]音频配置:[/cyan]
   • 输入设备 ID: {audio_config.input_device_id}
     {audio_config.input_channels}ch @ {audio_config.input_sample_rate}Hz
-    [dim](Clubdeck + MPV 已混合)[/dim]
-  • 输出设备 ID: {audio_config.output_device_id}
-    {audio_config.output_channels}ch @ {audio_config.output_sample_rate}Hz
+    [dim](从 Clubdeck 接收音频)[/dim]
   • 浏览器端: {audio_config.channels}ch @ {audio_config.sample_rate}Hz
   • 比特率: {bitrate_str}
-  • 架构: [cyan]简化单输入单输出[/cyan]
+  • 模式: [yellow]单向接收 (监听)[/yellow]
 
 [cyan]服务器配置:[/cyan]
   • 地址: http://{config.server.host}:{config.server.port}

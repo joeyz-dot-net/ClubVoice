@@ -17,6 +17,16 @@ from .app import add_audio_to_stream
 console = Console()
 
 
+# 全局连接数变量（用于 /status 端点）
+_global_connection_count = 0
+
+
+def get_connection_count() -> int:
+    """获取当前连接数"""
+    global _global_connection_count
+    return _global_connection_count
+
+
 class WebSocketHandler:
     """WebSocket 处理器"""
     
@@ -54,9 +64,11 @@ class WebSocketHandler:
         
         @self.socketio.on('connect')
         def handle_connect():
+            global _global_connection_count
             from flask import request
             client_id = request.sid
             self.connected_clients.add(client_id)
+            _global_connection_count = len(self.connected_clients)
             console.print(f"[green]客户端已连接: {client_id}[/green]")
             # 发送连接确认和当前配置
             emit('connected', {
@@ -73,9 +85,11 @@ class WebSocketHandler:
         
         @self.socketio.on('disconnect')
         def handle_disconnect():
+            global _global_connection_count
             from flask import request
             client_id = request.sid
             self.connected_clients.discard(client_id)
+            _global_connection_count = len(self.connected_clients)
             console.print(f"[yellow]客户端已断开: {client_id}[/yellow]")
         
         @self.socketio.on('audio_data')
