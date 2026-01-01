@@ -86,10 +86,32 @@ def index():
     return send_from_directory(STATIC_DIR, 'index.html')
 
 
+@app.route('/favicon.ico')
+def favicon():
+    """网站图标 - 返回 204 表示无内容"""
+    return '', 204
+
+
 @app.route('/health')
 def health():
     """健康检查"""
     return {'status': 'ok'}
+
+
+@app.route('/status')
+def status():
+    """服务器状态"""
+    # 尝试从 WebSocket 处理器获取连接数
+    try:
+        from .websocket_handler import get_connection_count
+        peers = get_connection_count()
+    except:
+        peers = 0
+    
+    return {
+        'status': 'running',
+        'peers': peers
+    }
 
 
 @app.route('/stream')

@@ -49,15 +49,12 @@ def main():
         bootstrap = Bootstrap()
         audio_config = bootstrap.run()
         
-        # 创建音频桥接器 - 简化单输入单输出架构
+        # 创建音频桥接器 - 单向接收模式（仅输入）
         bridge = VBCableBridge(
             input_device_id=audio_config.input_device_id,
-            output_device_id=audio_config.output_device_id,
             browser_sample_rate=audio_config.sample_rate,
             input_sample_rate=audio_config.input_sample_rate,
-            output_sample_rate=audio_config.output_sample_rate,
             input_channels=audio_config.input_channels,
-            output_channels=audio_config.output_channels,
             browser_channels=audio_config.channels,
             chunk_size=audio_config.chunk_size
         )

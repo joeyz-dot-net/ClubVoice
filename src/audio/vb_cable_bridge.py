@@ -1,3 +1,4 @@
+
 """
 VB-Cable 音频桥接器
 """
@@ -15,54 +16,48 @@ console = Console()
 
 
 class VBCableBridge:
-    """VB-Cable 音频桥接器 - 单输入单输出（Clubdeck 已包含 MPV 混音）"""
+    """VB-Cable 音频桥接器 - 单向接收模式"""
     
     def __init__(
         self,
         input_device_id: int,
-        output_device_id: int,
         browser_sample_rate: int = 48000,  # 浏览器端采样率
         input_sample_rate: int = 48000,    # 输入设备采样率
-        output_sample_rate: int = 48000,   # 输出设备采样率
         input_channels: int = 2,           # 输入设备声道数
-        output_channels: int = 2,          # 输出设备声道数
         browser_channels: int = 2,         # 浏览器端声道数
-        chunk_size: int = 512
+        chunk_size: int = 512,
+        output_device_id: Optional[int] = None,  # 可选：保持向后兼容
+        output_sample_rate: Optional[int] = None,
+        output_channels: Optional[int] = None
     ):
         self.input_device_id = input_device_id
-        self.output_device_id = output_device_id
+        self.output_device_id = output_device_id  # 现在是可选的
         self.browser_sample_rate = browser_sample_rate
         self.input_sample_rate = input_sample_rate
-        self.output_sample_rate = output_sample_rate
+        self.output_sample_rate = output_sample_rate or browser_sample_rate
         self.input_channels = input_channels
-        self.output_channels = output_channels
+        self.output_channels = output_channels or browser_channels
         self.browser_channels = browser_channels
         self.chunk_size = chunk_size
         
         self.processor = AudioProcessor(browser_sample_rate, browser_channels)
         
-        # 音频队列 - 增大容量避免丢帧
+        # 音频队列 - 只保留输入队列（单向接收）
         self.input_queue: queue.Queue = queue.Queue(maxsize=200)   # 从 Clubdeck 接收
-        self.mpv_queue: queue.Queue = queue.Queue(maxsize=200)     # 从 MPV 接收
-        self.output_queue: queue.Queue = queue.Queue(maxsize=200)  # 发送到 Clubdeck
-        
-        # 平滑播放缓冲
-        self.output_buffer = np.zeros(0, dtype=np.int16)
         
         # 状态
         self.running = False
         self.input_stream: Optional[sd.InputStream] = None
-        self.output_stream: Optional[sd.OutputStream] = None
+        self.output_stream: Optional[sd.OutputStream] = None  # 保留但可能不使用
         
         # 回调
         self.on_audio_received: Optional[Callable[[np.ndarray], None]] = None
         
         console.print(f"[dim]音频桥接器配置:[/dim]")
-        console.print(f"[dim]  输入: {input_channels}ch @ {input_sample_rate}Hz (Clubdeck + MPV 已混合)[/dim]")
-        console.print(f"[dim]  输出: {output_channels}ch @ {output_sample_rate}Hz (发送到 Clubdeck)[/dim]")
+        console.print(f"[dim]  输入: {input_channels}ch @ {input_sample_rate}Hz (从 Clubdeck 接收)[/dim]")
         console.print(f"[dim]  浏览器: {browser_channels}ch @ {browser_sample_rate}Hz[/dim]")
         console.print(f"[dim]  Chunk Size: {chunk_size} frames[/dim]")
-        console.print(f"[green]✓ 架构: 简化单输入单输出（无 Python 混音）[/green]")
+        console.print(f"[yellow]✓ 模式: 单向接收（仅监听）[/yellow]")
     
     def _resample(self, audio_data: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
         """简单的线性插值重采样"""
@@ -245,15 +240,18 @@ class VBCableBridge:
             devices = sd.query_devices()
             if self.input_device_id < 0 or self.input_device_id >= len(devices):
                 raise ValueError(f"输入设备 ID {self.input_device_id} 无效（总设备数: {len(devices)}）")
-            if self.output_device_id < 0 or self.output_device_id >= len(devices):
-                raise ValueError(f"输出设备 ID {self.output_device_id} 无效（总设备数: {len(devices)}）")
+            
+            # 只在有输出设备时验证输出设备
+            if self.output_device_id is not None:
+                if self.output_device_id < 0 or self.output_device_id >= len(devices):
+                    raise ValueError(f"输出设备 ID {self.output_device_id} 无效（总设备数: {len(devices)}）")
         except Exception as e:
             console.print(f"[red]设备验证失败: {e}[/red]")
             self.running = False
             raise
         
         try:
-            # 启动输入流 (从 Hi-Fi Cable 读取 Clubdeck 音频 + MPV 音乐)
+            # 启动输入流 (从 Clubdeck 接收音频)
             self.input_stream = sd.InputStream(
                 device=self.input_device_id,
                 samplerate=self.input_sample_rate,
@@ -265,19 +263,22 @@ class VBCableBridge:
             self.input_stream.start()
             console.print(f"[dim]✓ 输入流已启动: {self.input_sample_rate}Hz, {self.input_channels}ch, blocksize={self.chunk_size}[/dim]")
             
-            # 启动输出流 (向 Hi-Fi Cable 写入浏览器音频)
-            self.output_stream = sd.OutputStream(
-                device=self.output_device_id,
-                samplerate=self.output_sample_rate,
-                channels=self.output_channels,
-                dtype='int16',
-                blocksize=self.chunk_size,
-                callback=self._output_callback
-            )
-            self.output_stream.start()
-            console.print(f"[dim]✓ 输出流已启动: {self.output_sample_rate}Hz, {self.output_channels}ch, blocksize={self.chunk_size}[/dim]")
+            # 只在双向模式时启动输出流
+            if self.output_device_id is not None:
+                self.output_stream = sd.OutputStream(
+                    device=self.output_device_id,
+                    samplerate=self.output_sample_rate,
+                    channels=self.output_channels,
+                    dtype='int16',
+                    blocksize=self.chunk_size,
+                    callback=self._output_callback
+                )
+                self.output_stream.start()
+                console.print(f"[dim]✓ 输出流已启动: {self.output_sample_rate}Hz, {self.output_channels}ch[/dim]")
+            else:
+                console.print(f"[dim]⚠ 单向接收模式：未启动输出流[/dim]")
             
-            console.print("[green]✓ 音频桥接已启动（简化架构，无 Python 混音）[/green]")
+            console.print("[green]✓ 音频桥接已启动[/green]")
         except Exception as e:
             console.print(f"[red]启动音频流失败: {e}[/red]")
             # 清理已启动的流
@@ -358,17 +359,5 @@ class VBCableBridge:
         while not self.input_queue.empty():
             try:
                 self.input_queue.get_nowait()
-            except queue.Empty:
-                break
-        
-        while not self.mpv_queue.empty():
-            try:
-                self.mpv_queue.get_nowait()
-            except queue.Empty:
-                break
-        
-        while not self.output_queue.empty():
-            try:
-                self.output_queue.get_nowait()
             except queue.Empty:
                 break
