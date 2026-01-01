@@ -260,13 +260,13 @@
 
     <!-- 
     重要：将下面的服务器地址替换为您的 ClubVoice 服务器地址
-    例如：http://b.joeyz.net/sdk/clubvoice.js
+    例如：https://e.joeyz.net/sdk/clubvoice.js
     -->
-    <script src="http://b.joeyz.net/sdk/clubvoice.js"></script>
+    <script src="https://e.joeyz.net/sdk/clubvoice.js"></script>
     <script>
         // ClubVoice 集成类
         class ClubVoiceIntegration {
-            constructor(serverUrl = 'http://b.joeyz.net') {
+            constructor(serverUrl = 'https://e.joeyz.net') {
                 this.serverUrl = serverUrl;
                 this.sdk = new ClubVoiceSDK(serverUrl);
                 this.initElements();
@@ -378,7 +378,7 @@
         // 页面加载后初始化 ClubVoice
         document.addEventListener('DOMContentLoaded', () => {
             // 重要：将服务器地址改为您的 ClubVoice 服务器
-            const clubVoice = new ClubVoiceIntegration('http://e.joeyz.net');
+            const clubVoice = new ClubVoiceIntegration('https://e.joeyz.net');
             
             // 暴露到全局用于调试
             window.clubVoice = clubVoice;
