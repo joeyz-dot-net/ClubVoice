@@ -5,7 +5,7 @@ import configparser
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List
 from pathlib import Path
 
 
@@ -51,10 +51,20 @@ class ServerConfig:
 
 
 @dataclass
+class CorsConfig:
+    """CORS 跨域配置"""
+    enabled: bool = True
+    allowed_origins: List[str] = field(default_factory=lambda: [
+        'http://localhost:5000', 'http://127.0.0.1:5000'
+    ])
+
+
+@dataclass
 class AppConfig:
     """应用配置"""
     audio: AudioConfig = field(default_factory=AudioConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
+    cors: CorsConfig = field(default_factory=CorsConfig)
     
     def load_from_file(self, config_path: Optional[Path] = None) -> 'AppConfig':
         """从配置文件加载（仅加载服务器配置，音频参数由设备决定）"""
@@ -93,6 +103,17 @@ class AppConfig:
                         self.audio.input_device_id_2 = int(input_device_id_2)
                     except ValueError:
                         pass
+            
+            # 加载 CORS 配置
+            if 'cors' in parser:
+                self.cors.enabled = parser.getboolean('cors', 'enabled', fallback=True)
+                allowed_origins = parser.get('cors', 'allowed_origins', fallback='')
+                if allowed_origins:
+                    # 解析逗号分隔的域名列表
+                    self.cors.allowed_origins = [
+                        origin.strip() for origin in allowed_origins.split(',')
+                        if origin.strip()
+                    ]
             
             print(f"[✓] 已从 {config_path} 加载服务器配置")
             
@@ -139,6 +160,12 @@ class AppConfig:
         if self.audio.input_device_id_2 is not None:
             audio_section['input_device_id_2'] = str(self.audio.input_device_id_2)
         parser['audio'] = audio_section
+        
+        # CORS配置
+        parser['cors'] = {
+            'enabled': str(self.cors.enabled).lower(),
+            'allowed_origins': ','.join(self.cors.allowed_origins)
+        }
         
         # MPV配置（如果存在）
         parser['mpv'] = {
