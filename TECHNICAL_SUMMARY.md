@@ -175,7 +175,7 @@ python run.py
 
 # 或手动运行
 pyinstaller ClubVoice.spec -y
-Copy-Item config.json dist\
+Copy-Item config.ini dist\
 ```
 
 ### 验证检查清单

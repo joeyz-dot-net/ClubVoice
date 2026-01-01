@@ -155,9 +155,9 @@ voice-communication-app/
 │   ├── debug.html                 # 调试页面
 │   └── js/
 │       └── client.js              # 前端音频客户端
-├── config.json                    # 服务器配置
+├── config.ini                     # 服务器配置
 ├── requirements.txt               # Python 依赖
-├── VoiceCommunicationApp.spec     # PyInstaller 配置
+├── ClubVoice.spec                 # PyInstaller 配置
 └── run.py                         # 运行入口
 ```
 
@@ -172,16 +172,25 @@ voice-communication-app/
 
 ## 配置文件
 
-`config.json`:
+`config.ini`:
 
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 5000,
-    "debug": false
-  }
-}
+```ini
+[server]
+host = 0.0.0.0
+port = 5000
+debug = false
+
+[audio]
+duplex_mode = half
+input_device_id = 27
+input_device_id_2 = 26
+mix_mode = true
+
+[mpv]
+enabled = true
+default_pipe = \\.\pipe\mpv-pipe
+ducking_volume = 15
+normal_volume = 100
 ```
 
 ## 常见问题

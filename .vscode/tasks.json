@@ -4,7 +4,7 @@
         {
             "label": "Build Only",
             "type": "shell",
-            "command": "pyinstaller ClubVoice.spec -y; Copy-Item config.json dist\\; if ($?) { Write-Host ''; Write-Host '本地构建完成！' -ForegroundColor Green; Write-Host '输出目录: .\\dist\\' -ForegroundColor Cyan } else { Write-Host '构建失败!' -ForegroundColor Red }",
+            "command": "pyinstaller ClubVoice.spec -y; if ($?) { Copy-Item config.ini dist\\ -Force; Write-Host ''; Write-Host '✓ 已复制 config.ini' -ForegroundColor Green; Write-Host ''; Write-Host '本地构建完成！' -ForegroundColor Green; Write-Host '输出目录: .\\dist\\' -ForegroundColor Cyan } else { Write-Host '构建失败!' -ForegroundColor Red }",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -36,7 +36,7 @@
         {
             "label": "Deploy to Local",
             "type": "shell",
-            "command": "$dest='D:\\Code\\ClubVoice-Deploy'; $source='.\\dist'; if (!(Test-Path $source)) { Write-Host '错误: dist 目录不存在，请先构建！' -ForegroundColor Red; Read-Host '按 Enter 键关闭窗口'; exit 1 }; if (Test-Path $dest) { Write-Host '清理旧部署目录...' -ForegroundColor Yellow; Remove-Item -Path $dest -Recurse -Force }; Write-Host '创建部署目录...' -ForegroundColor Yellow; New-Item -ItemType Directory -Path $dest -Force | Out-Null; Write-Host ''; Write-Host '正在部署到 D:\\Code\\ClubVoice-Deploy...' -ForegroundColor Cyan; Get-ChildItem -Path $source\\* -Recurse | ForEach-Object { $relativePath = $_.FullName.Replace((Get-Location).Path + '\\dist\\', ''); $destPath = Join-Path $dest $relativePath; Write-Host \"  复制: $destPath\" -ForegroundColor Gray }; Copy-Item -Path $source\\* -Destination $dest -Recurse -Force; Write-Host ''; Write-Host '部署完成！' -ForegroundColor Green; Write-Host \"目标目录: $dest\" -ForegroundColor Cyan; Read-Host '按 Enter 键关闭窗口'",
+            "command": "$dest='D:\\Code\\ClubVoice-Deploy'; $source='.\\dist'; if (!(Test-Path $source)) { Write-Host '错误: dist 目录不存在，请先构建！' -ForegroundColor Red; Read-Host '按 Enter 键关闭窗口'; exit 1 }; if (Test-Path $dest) { Write-Host '清理旧部署目录...' -ForegroundColor Yellow; Remove-Item -Path $dest -Recurse -Force }; Write-Host '创建部署目录...' -ForegroundColor Yellow; New-Item -ItemType Directory -Path $dest -Force | Out-Null; Write-Host ''; Write-Host '正在部署到 D:\\Code\\ClubVoice-Deploy...' -ForegroundColor Cyan; Copy-Item -Path $source\\* -Destination $dest -Recurse -Force; Get-ChildItem -Path $dest\\* -Recurse -File | ForEach-Object { $relativePath = $_.FullName.Replace($dest + '\\', ''); Write-Host \"  复制: $relativePath\" -ForegroundColor Gray }; Write-Host ''; Write-Host '部署完成！' -ForegroundColor Green; Write-Host \"目标目录: $dest\" -ForegroundColor Cyan; Read-Host '按 Enter 键关闭窗口'",
             "group": "none",
             "presentation": {
                 "echo": true,

@@ -74,13 +74,10 @@ Python Server ←─────────────────────
 如果需要手动选择，查看设备列表并输入序号。
 
 #### **配置文件**
-编辑 `config.json`:
-```json
-{
-  "audio": {
-    "duplex_mode": "full"  // 双线缆方案必须用全双工
-  }
-}
+编辑 `config.ini`:
+```ini
+[audio]
+duplex_mode = full  # 双线缆方案必须用全双工
 ```
 
 ---
@@ -194,25 +191,19 @@ python run.py
 ### 采样率匹配
 程序默认使用 **48000 Hz**，Hi-Fi Cable 和 VB-Cable 都支持。
 
-如需更高音质（音乐制作场景），可修改 `config.json`:
-```json
-{
-  "audio": {
-    "sample_rate": 96000,
-    "input_sample_rate": 96000,
-    "output_sample_rate": 48000
-  }
-}
+如需更高音质（音乐制作场景），可修改 `config.ini`:
+```ini
+[audio]
+sample_rate = 96000
+input_sample_rate = 96000
+output_sample_rate = 48000
 ```
 
 ### 缓冲区调整
 降低延迟（可能增加 CPU 占用）：
-```json
-{
-  "audio": {
-    "chunk_size": 256  // 默认 512
-  }
-}
+```ini
+[audio]
+chunk_size = 256  # 默认 512
 ```
 
 ---

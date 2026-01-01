@@ -40,8 +40,8 @@ env/
 # Logs
 *.log
 
-# Local config (keep config.json template)
-# config.local.json
+# Local config (keep config.ini template)
+# config.local.ini
 
 # OS
 .DS_Store

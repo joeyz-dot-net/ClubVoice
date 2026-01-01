@@ -72,7 +72,7 @@ mpv your-music.mp3
 - 看到黄色的"发送到 Clubdeck"日志吗？
 - Clubdeck 房间中能听到浏览器麦克风 + MPV 吗？
 - 如果收不到浏览器麦克风：
-  1. 确认 config.json 中 `duplex_mode` 是 `full`
+  1. 确认 config.ini 中 `duplex_mode` 是 `full`
   2. 检查浏览器是否授予麦克风权限
 
 ## 故障排查
@@ -100,13 +100,10 @@ mpv your-music.mp3
 **原因**：半双工模式或输出队列问题
 
 **解决方法**：
-1. 检查 `config.json`：
-   ```json
-   {
-     "audio": {
-       "duplex_mode": "full"
-     }
-   }
+1. 检查 `config.ini`：
+   ```ini
+   [audio]
+   duplex_mode = full
    ```
 2. 在浏览器中对着麦克风说话
 3. 查看是否有黄色"发送到 Clubdeck"日志
@@ -116,7 +113,7 @@ mpv your-music.mp3
 
 **解决方法**：
 1. 确保 Clubdeck 输入/输出使用不同的虚拟设备
-2. 减小 `chunk_size`（在 config.json 中）
+2. 减小 `chunk_size`（在 config.ini 中）
 3. 使用耳机而非扬声器
 
 ## 测试完成后

@@ -49,14 +49,19 @@ def main():
         bootstrap = Bootstrap()
         audio_config = bootstrap.run()
         
-        # 创建音频桥接器 - 单向接收模式（仅输入）
+        # 创建音频桥接器 - 支持单输入或双输入混音模式
         bridge = VBCableBridge(
             input_device_id=audio_config.input_device_id,
             browser_sample_rate=audio_config.sample_rate,
             input_sample_rate=audio_config.input_sample_rate,
             input_channels=audio_config.input_channels,
             browser_channels=audio_config.channels,
-            chunk_size=audio_config.chunk_size
+            chunk_size=audio_config.chunk_size,
+            # 混音模式参数
+            mix_mode=audio_config.mix_mode,
+            input_device_id_2=audio_config.input_device_id_2,
+            input_sample_rate_2=audio_config.input_sample_rate_2,
+            input_channels_2=audio_config.input_channels_2
         )
         
         # 创建 Flask 应用
