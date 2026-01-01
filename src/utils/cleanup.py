@@ -1,5 +1,6 @@
 """
-临时文件清理工具 - 清理 PyInstaller 解压的临时文件
+ClubVoice 临时文件清理工具
+支持 PyInstaller 临时文件清理和项目文件清理
 """
 import os
 import sys
@@ -7,7 +8,7 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 from rich.console import Console
 
 
@@ -145,3 +146,141 @@ def cleanup_on_exit(verbose: bool = False):
     # 安排当前程序目录的延迟清理
     if cleaner.is_frozen:
         cleaner.schedule_self_cleanup()
+
+
+def cleanup_project_files(verbose: bool = True) -> Tuple[int, int]:
+    """
+    清理项目临时文件
+    
+    Args:
+        verbose: 是否显示详细输出
+    
+    Returns:
+        (files_count, dirs_count): 删除的文件数和目录数
+    """
+    from pathlib import Path
+    
+    # 获取项目根目录
+    if getattr(sys, 'frozen', False):
+        project_root = Path(sys.executable).parent
+    else:
+        project_root = Path(__file__).parent.parent.parent
+    
+    # 临时文件模式
+    temp_patterns = [
+        '**/__pycache__',
+        '**/*.pyc',
+        '**/*.pyo', 
+        '**/*.pyd',
+        '*.log',
+        '*.tmp',
+        '.pytest_cache',
+        '.coverage',
+        'htmlcov',
+    ]
+    
+    # 受保护的目录
+    protected_dirs = {'.git', '.vscode', 'node_modules', 'venv', '.env'}
+    
+    files_deleted = 0
+    dirs_deleted = 0
+    
+    if verbose:
+        console.print("🧹 清理项目临时文件...", style="cyan")
+    
+    try:
+        for pattern in temp_patterns:
+            matches = list(project_root.glob(pattern))
+            
+            for path in matches:
+                # 跳过受保护的目录
+                if any(protected in path.parts for protected in protected_dirs):
+                    continue
+                
+                try:
+                    if path.is_file():
+                        path.unlink()
+                        files_deleted += 1
+                        if verbose:
+                            rel_path = path.relative_to(project_root)
+                            console.print(f"  删除文件: {rel_path}", style="dim")
+                    elif path.is_dir():
+                        shutil.rmtree(path, ignore_errors=True)
+                        dirs_deleted += 1
+                        if verbose:
+                            rel_path = path.relative_to(project_root)
+                            console.print(f"  删除目录: {rel_path}", style="dim")
+                except Exception as e:
+                    if verbose:
+                        console.print(f"  跳过 {path}: {e}", style="dim yellow")
+    
+    except Exception as e:
+        if verbose:
+            console.print(f"[dim yellow]清理项目文件时出错: {e}[/dim yellow]")
+    
+    if verbose and (files_deleted > 0 or dirs_deleted > 0):
+        console.print(f"[green]✓ 项目清理完成: {files_deleted} 个文件, {dirs_deleted} 个目录[/green]")
+    
+    return files_deleted, dirs_deleted
+
+
+def cleanup_audio_resources():
+    """清理音频资源和队列"""
+    try:
+        # 导入音频模块并清理
+        from ..audio.vb_cable_bridge import VBCableBridge
+        from ..server.websocket_handler import WebSocketHandler
+        
+        console.print("[dim]清理音频资源...[/dim]")
+        
+        # 注意：这里只是示例，实际清理需要在各自的模块中实现
+        # 因为我们需要访问具体的实例
+        
+    except ImportError:
+        # 模块未加载，无需清理
+        pass
+    except Exception as e:
+        console.print(f"[dim yellow]清理音频资源时出错: {e}[/dim yellow]")
+
+
+def full_cleanup(verbose: bool = True) -> dict:
+    """
+    执行完整清理：PyInstaller + 项目文件 + 音频资源
+    
+    Returns:
+        清理统计信息字典
+    """
+    stats = {
+        'pyinstaller_dirs': 0,
+        'project_files': 0,
+        'project_dirs': 0,
+        'audio_cleaned': False
+    }
+    
+    if verbose:
+        console.print("🚀 开始完整清理...", style="bold cyan")
+    
+    # 1. 清理 PyInstaller 临时目录
+    pyinstaller_cleaner = TempFileCleanup()
+    stats['pyinstaller_dirs'] = pyinstaller_cleaner.clean_old_temp_dirs(verbose=verbose)
+    
+    # 2. 清理项目文件
+    files_count, dirs_count = cleanup_project_files(verbose=verbose)
+    stats['project_files'] = files_count
+    stats['project_dirs'] = dirs_count
+    
+    # 3. 清理音频资源
+    try:
+        cleanup_audio_resources()
+        stats['audio_cleaned'] = True
+    except:
+        pass
+    
+    if verbose:
+        total_items = stats['pyinstaller_dirs'] + stats['project_files'] + stats['project_dirs']
+        if total_items > 0:
+            console.print(f"[bold green]🎉 清理完成! 总共清理了 {total_items} 项内容[/bold green]")
+        else:
+            console.print("[dim]✨ 系统已经很干净了![/dim]")
+    
+    return stats

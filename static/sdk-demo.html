@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClubVoice SDK 集成示例</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .demo-content {
+            background: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        /* ClubVoice Widget 样式 */
+        .clubvoice-widget {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.9), rgba(30, 30, 30, 0.95));
+            border-radius: 15px;
+            padding: 20px;
+            color: white;
+            font-family: 'Arial', sans-serif;
+            z-index: 10000;
+            min-width: 320px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s ease-in-out;
+        }
+
+        .clubvoice-widget.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        
+        .clubvoice-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #00ff88;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff4757;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #00ff88;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .clubvoice-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .clubvoice-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .clubvoice-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .clubvoice-btn:hover::before {
+            left: 100%;
+        }
+        
+        .clubvoice-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .clubvoice-btn.active {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        
+        .clubvoice-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .clubvoice-btn:disabled:hover {
+            box-shadow: none;
+        }
+        
+        .volume-control {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .volume-label {
+            font-size: 12px;
+            color: #bbb;
+            min-width: 35px;
+        }
+        
+        .volume-slider {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: #444;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #00ff88;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 255, 136, 0.3);
+        }
+
+        .volume-slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #00ff88;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .status {
+            font-size: 12px;
+            color: #ccc;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .status.connected {
+            color: #00ff88;
+        }
+        
+        .status.error {
+            color: #ff6b6b;
+        }
+
+        .stats {
+            font-size: 11px;
+            color: #888;
+        }
+
+        /* 音频可视化 */
+        .audio-visualizer {
+            width: 100%;
+            height: 30px;
+            background: #222;
+            border-radius: 4px;
+            margin: 10px 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .audio-bars {
+            display: flex;
+            height: 100%;
+            align-items: end;
+            gap: 1px;
+            padding: 2px;
+        }
+
+        .audio-bar {
+            background: linear-gradient(to top, #00ff88, #00aa55);
+            width: 3px;
+            transition: height 0.1s ease;
+            border-radius: 1px;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .clubvoice-widget {
+                bottom: 10px;
+                right: 10px;
+                left: 10px;
+                min-width: auto;
+            }
+
+            .clubvoice-controls {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .volume-control {
+                width: 100%;
+            }
+        }
+
+        /* 测试内容样式 */
+        .test-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            background: #0056b3;
+        }
+
+        .log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+
+        .info-panel {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎧 ClubVoice SDK 集成示例</h1>
+        
+        <div class="info-panel">
+            <h3>使用说明</h3>
+            <p><strong>这是一个完整的集成示例，您可以将右下角的小组件代码复制到您的点播网站 d.joeyz.net 或 c.joeyz.net 中。</strong></p>
+            <p>特性：</p>
+            <ul>
+                <li>实时音频流接收</li>
+                <li>音量控制</li>
+                <li>连接状态监控</li>
+                <li>音频可视化</li>
+                <li>响应式设计</li>
+            </ul>
+        </div>
+
+        <div class="demo-content">
+            <h2>模拟点播网站内容</h2>
+            <p>这里是您的点播网站的主要内容区域。用户可以正常浏览和使用网站功能，同时右下角的 ClubVoice 小组件提供语音房间收听功能。</p>
+            
+            <div class="test-section">
+                <h3>测试功能</h3>
+                <button class="btn" onclick="testConnection()">测试连接</button>
+                <button class="btn" onclick="testAudio()">测试音频</button>
+                <button class="btn" onclick="showStats()">显示统计</button>
+                <button class="btn" onclick="clearLog()">清空日志</button>
+                
+                <div class="log" id="testLog">
+[系统] 页面加载完成，ClubVoice SDK 初始化中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ClubVoice Widget -->
+    <div class="clubvoice-widget" id="clubvoice-widget">
+        <div class="clubvoice-title">
+            <span>🎧</span>
+            <span>房间语音</span>
+            <div class="status-indicator" id="statusIndicator"></div>
+        </div>
+        
+        <div class="clubvoice-controls">
+            <button class="clubvoice-btn" id="listen-btn" disabled>连接中...</button>
+            <div class="volume-control">
+                <span class="volume-label">音量</span>
+                <input type="range" class="volume-slider" id="volume-slider" 
+                       min="0" max="1" step="0.1" value="0.8" disabled>
+            </div>
+        </div>
+
+        <!-- 音频可视化 -->
+        <div class="audio-visualizer" id="audioVisualizer">
+            <div class="audio-bars" id="audioBars">
+                <!-- 动态生成音频条 -->
+            </div>
+        </div>
+        
+        <div class="status" id="status">
+            <span>正在连接服务器...</span>
+            <span class="stats" id="stats">0 packets</span>
+        </div>
+    </div>
+
+    <!-- 加载 ClubVoice SDK -->
+    <script src="/sdk/clubvoice.js"></script>
+    <script>
+        class VoiceWidget {
+            constructor() {
+                // 使用当前页面的域名作为服务器地址
+                this.serverUrl = window.location.origin;
+                this.sdk = new ClubVoiceSDK(this.serverUrl);
+                this.widget = document.getElementById('clubvoice-widget');
+                this.listenBtn = document.getElementById('listen-btn');
+                this.volumeSlider = document.getElementById('volume-slider');
+                this.statusEl = document.getElementById('status');
+                this.statusIndicator = document.getElementById('statusIndicator');
+                this.statsEl = document.getElementById('stats');
+                
+                this.isVisible = false;
+                this.audioVisualizerBars = [];
+                
+                this.init();
+            }
+
+            async init() {
+                this.log('初始化 ClubVoice SDK...');
+                this.createAudioVisualizer();
+                
+                // 绑定 SDK 事件
+                this.sdk.onConnected = (data) => {
+                    this.log(`✅ 已连接到服务器，客户端ID: ${data.client_id}`);
+                    this.updateStatus('已连接，点击开始收听', 'connected');
+                    this.listenBtn.textContent = '开始收听';
+                    this.listenBtn.disabled = false;
+                    this.volumeSlider.disabled = false;
+                    this.statusIndicator.classList.add('connected');
+                };
+
+                this.sdk.onDisconnected = () => {
+                    this.log('❌ 连接已断开');
+                    this.updateStatus('连接断开，正在重连...', 'error');
+                    this.listenBtn.textContent = '重新连接';
+                    this.listenBtn.disabled = false;
+                    this.statusIndicator.classList.remove('connected');
+                };
+
+                this.sdk.onError = (error) => {
+                    this.log(`❌ 错误: ${error.message}`);
+                    this.updateStatus(`错误: ${error.message}`, 'error');
+                };
+
+                this.sdk.onListeningChanged = (listening) => {
+                    this.listenBtn.textContent = listening ? '停止收听' : '开始收听';
+                    this.listenBtn.classList.toggle('active', listening);
+                    this.updateStatus(listening ? '🔊 正在收听房间语音' : '⏸️ 已停止收听', 
+                                    listening ? 'connected' : '');
+                    this.log(listening ? '🎵 开始收听房间语音' : '⏹️ 停止收听');
+                };
+
+                this.sdk.onAudioReceived = (info) => {
+                    // 更新统计信息
+                    this.statsEl.textContent = `${this.sdk.stats.packetsReceived} packets`;
+                    
+                    // 更新音频可视化
+                    this.updateAudioVisualizer(info.volume);
+                    
+                    // 动态更新状态
+                    if (info.volume > 8) {
+                        this.statusEl.firstChild.textContent = `🔊 音量: ${info.volume.toFixed(0)}%`;
+                    }
+                };
+
+                // 绑定控件事件
+                this.listenBtn.addEventListener('click', async () => {
+                    try {
+                        if (this.sdk.isListening) {
+                            this.sdk.stopListening();
+                        } else if (this.sdk.isConnected) {
+                            await this.sdk.startListening();
+                        } else {
+                            // 重新连接
+                            await this.sdk.init();
+                        }
+                    } catch (error) {
+                        this.log(`❌ 操作失败: ${error.message}`);
+                    }
+                });
+
+                this.volumeSlider.addEventListener('input', (e) => {
+                    const volume = parseFloat(e.target.value);
+                    this.sdk.setVolume(volume);
+                    this.log(`🔊 音量调整为: ${(volume * 100).toFixed(0)}%`);
+                });
+
+                try {
+                    // 初始化连接
+                    await this.sdk.init();
+                    this.showWidget();
+                } catch (error) {
+                    this.log(`❌ 初始化失败: ${error.message}`);
+                    this.updateStatus('连接失败，点击重试', 'error');
+                    this.listenBtn.textContent = '重试连接';
+                    this.listenBtn.disabled = false;
+                    this.showWidget();
+                }
+            }
+
+            createAudioVisualizer() {
+                const audioBars = document.getElementById('audioBars');
+                for (let i = 0; i < 40; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'audio-bar';
+                    bar.style.height = '2px';
+                    audioBars.appendChild(bar);
+                    this.audioVisualizerBars.push(bar);
+                }
+            }
+
+            updateAudioVisualizer(volume) {
+                const normalizedVolume = Math.min(volume / 50, 1); // 标准化音量
+                const activeBars = Math.floor(normalizedVolume * this.audioVisualizerBars.length);
+                
+                this.audioVisualizerBars.forEach((bar, index) => {
+                    if (index < activeBars) {
+                        const height = Math.random() * 20 + 5; // 随机高度模拟音频波形
+                        bar.style.height = `${height}px`;
+                    } else {
+                        bar.style.height = '2px';
+                    }
+                });
+            }
+
+            showWidget() {
+                if (!this.isVisible) {
+                    setTimeout(() => {
+                        this.widget.classList.add('show');
+                        this.isVisible = true;
+                    }, 1000);
+                }
+            }
+
+            updateStatus(text, className = '') {
+                this.statusEl.firstChild.textContent = text;
+                this.statusEl.className = `status ${className}`;
+            }
+
+            log(message) {
+                const timestamp = new Date().toLocaleTimeString();
+                const logEl = document.getElementById('testLog');
+                logEl.innerHTML += `\n[${timestamp}] ${message}`;
+                logEl.scrollTop = logEl.scrollHeight;
+                console.log(`[ClubVoice] ${message}`);
+            }
+
+            getSDK() {
+                return this.sdk;
+            }
+        }
+
+        // 测试功能
+        let voiceWidget;
+
+        function testConnection() {
+            const status = voiceWidget.getSDK().getStatus();
+            voiceWidget.log(`连接状态: ${JSON.stringify(status, null, 2)}`);
+        }
+
+        function testAudio() {
+            const sdk = voiceWidget.getSDK();
+            if (sdk.isConnected && !sdk.isListening) {
+                sdk.startListening().then(() => {
+                    voiceWidget.log('🎵 音频测试：开始收听');
+                }).catch(error => {
+                    voiceWidget.log(`❌ 音频测试失败: ${error.message}`);
+                });
+            } else if (sdk.isListening) {
+                voiceWidget.log('🎵 音频测试：当前正在收听中');
+            } else {
+                voiceWidget.log('❌ 音频测试：请先连接到服务器');
+            }
+        }
+
+        function showStats() {
+            const stats = voiceWidget.getSDK().stats;
+            voiceWidget.log(`统计信息:
+- 接收包数: ${stats.packetsReceived}
+- 接收字节: ${stats.bytesReceived}
+- 连接时间: ${stats.connectionTime ? stats.connectionTime.toLocaleString() : '未连接'}`);
+        }
+
+        function clearLog() {
+            document.getElementById('testLog').innerHTML = '[系统] 日志已清空';
+        }
+
+        // 页面加载后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            voiceWidget = new VoiceWidget();
+            window.voiceWidget = voiceWidget; // 暴露到全局用于调试
+        });
+
+        // 页面关闭时清理
+        window.addEventListener('beforeunload', () => {
+            if (voiceWidget && voiceWidget.getSDK()) {
+                voiceWidget.getSDK().disconnect();
+            }
+        });
+    </script>
+</body>
+</html>

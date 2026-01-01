@@ -5,8 +5,9 @@ import os
 import sys
 import queue
 import struct
-from flask import Flask, send_from_directory, Response
+from flask import Flask, send_from_directory, Response, request, redirect
 from flask_socketio import SocketIO, disconnect
+from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
 # 判断是否为 PyInstaller 打包环境
@@ -25,10 +26,17 @@ app.config['SECRET_KEY'] = 'voice-communication-secret-key'
 # 禁用严格下划线处理，避免某些 HTTP 头问题
 app.config['WERKZEUG_RUN_MAIN'] = False
 
+# 加载配置
+from ..config.settings import config
+
+# 添加 CORS 支持 - 从配置文件读取
+if config.cors.enabled:
+    CORS(app, origins=config.cors.allowed_origins)
+
 # 创建 SocketIO - 使用 threading 模式，兼容性最好
 socketio = SocketIO(
     app,
-    cors_allowed_origins="*",
+    cors_allowed_origins=config.cors.allowed_origins if config.cors.enabled else "*",
     async_mode='threading',
     ping_timeout=60,
     ping_interval=25,
@@ -112,6 +120,53 @@ def status():
         'status': 'running',
         'peers': peers
     }
+
+
+@app.route('/sdk/clubvoice.js')
+def serve_sdk():
+    """提供 ClubVoice SDK"""
+    return send_from_directory(os.path.join(STATIC_DIR, 'js'), 'clubvoice-sdk.js', 
+                               mimetype='application/javascript')
+
+
+@app.route('/api/sdk-info')
+def sdk_info():
+    """SDK 信息接口"""
+    from ..config.settings import config
+    
+    return {
+        'name': 'ClubVoice SDK',
+        'version': '1.0.0',
+        'server_url': request.url_root.rstrip('/'),
+        'websocket_url': f"ws://{request.host}/socket.io/",
+        'duplex_mode': config.audio.duplex_mode,
+        'audio_format': {
+            'sample_rate': 48000,
+            'channels': 2,
+            'encoding': 'int16_base64'
+        },
+        'features': ['listen_only', 'volume_control', 'real_time_audio']
+    }
+
+
+@app.errorhandler(404)
+def not_found_error(error):
+    """处理 404 错误"""
+    import logging
+    
+    # 记录未找到的资源请求
+    logging.warning(f"404 Not Found: {request.method} {request.path} from {request.remote_addr}")
+    
+    # 如果是 API 请求，返回 JSON
+    if request.path.startswith('/api/') or request.path.endswith('.json'):
+        return {"error": "Resource not found"}, 404
+    
+    # 如果是音频流请求，提供说明
+    if request.path.endswith(('.m3u8', '.ts', '.aac', '.mp3')):
+        return "ClubVoice uses WebSocket for real-time audio communication, not file streaming", 404
+    
+    # 其他情况重定向到主页
+    return redirect('/')
 
 
 @app.route('/stream')
