@@ -39,12 +39,16 @@ python run.py  # Launches interactive device selector, then starts server on por
 
 ### Build & Deploy (PyInstaller)
 Tasks in `.vscode/tasks.json` handle the full build pipeline:
-- **Full Build** (default): Clean → pyinstaller → copy config.ini → backup old version → deploy to `\\b560\code\voice-communication-app`
-- **Build EXE**: Same as Full Build but without cleaning
+- **Full Build** (default): Clean → pyinstaller → copy config.ini → backup old version → deploy to `\\b560\code\ClubVoice`
+- **Build Only**: Same as Full Build but without cleaning or deployment  
+- **Deploy to B560**: Deploy dist/ to `\\b560\code\ClubVoice` (with timestamp backup)
+- **Deploy to Local**: Deploy dist/ to `D:\Code\ClubVoice-Deploy`
 - **Run App**: Direct Python execution for debugging
 - **Run EXE**: Execute built executable from dist/
 
-Build configuration in [ClubVoice.spec](ClubVoice.spec):
+Use VS Code tasks (Ctrl+Shift+P → "Tasks: Run Task") or run_task tool for automated builds.
+
+Build configuration in [ClubVoice.spec](../ClubVoice.spec):
 - Entry point: run.py
 - Bundled: static/ folder, config.ini
 - Hidden imports: engineio.async_drivers.threading, rich modules
@@ -52,13 +56,13 @@ Build configuration in [ClubVoice.spec](ClubVoice.spec):
 
 ### Hardware Setup Requirements
 
-**Dual VB-Cable isolation** (see [DUAL_CABLE_SETUP.md](DUAL_CABLE_SETUP.md)):
+**Dual VB-Cable isolation** (see [DUAL_CABLE_SETUP.md](../DUAL_CABLE_SETUP.md)):
 - VB-Cable A: Python ↔ Clubdeck communication
 - Hi-Fi Cable (or VB-Cable B): Browser ↔ Python communication
 - Clubdeck must route: Mic Input = Cable A Output, Speaker Output = Cable A Input
 - This architecture eliminates audio feedback loops in full-duplex mode
 
-**Simplified mixing architecture** (see [MPV_MUSIC_SETUP.md](MPV_MUSIC_SETUP.md)):
+**Simplified mixing architecture**:
 - Clubdeck performs hardware mixing of room audio + MPV music
 - Python server receives pre-mixed input, no mixing logic needed
 - MPV outputs to same Hi-Fi Cable Input that Clubdeck uses
@@ -84,7 +88,7 @@ Build configuration in [ClubVoice.spec](ClubVoice.spec):
 - Forward thread: `WebSocketHandler._forward_audio_to_clients()` - socket broadcasts
 
 ### Error Handling & User Experience
-- [run.py](run.py): Top-level exception handler with "Press Enter to exit" on errors
+- [run.py](../run.py): Top-level exception handler with "Press Enter to exit" on errors
 - Rich console: Color-coded device listings (cyan=VoiceMeeter, green=Hi-Fi, yellow=VB-Cable)
 - Recommended devices: Auto-selects first VoiceMeeter/Hi-Fi/VB-Cable Output for input, Input for output
 - Bootstrap displays full config summary before starting server
@@ -108,10 +112,10 @@ Build configuration in [ClubVoice.spec](ClubVoice.spec):
 - Ducking behavior: Adjust `ducking_volume`/`ducking_threshold` in [websocket_handler.py](src/server/websocket_handler.py#L24-L30)
 
 ### Testing
-- [tests/test_audio.py](tests/test_audio.py): AudioProcessor unit tests
-- [tests/test_websocket.py](tests/test_websocket.py): Socket.IO mock tests
-- [test_16ch.py](test_16ch.py): 16-channel device testing script
-- Debug page: [static/debug.html](static/debug.html) - additional logging and controls
+- [tests/test_audio.py](../tests/test_audio.py): AudioProcessor unit tests
+- [tests/test_websocket.py](../tests/test_websocket.py): Socket.IO mock tests
+- [test_16ch.py](../test_16ch.py): 16-channel device testing script
+- Debug page: [static/debug.html](../static/debug.html) - additional logging and controls
 
 ## Integration Points
 
@@ -127,4 +131,4 @@ Build configuration in [ClubVoice.spec](ClubVoice.spec):
 - **Thread safety**: Use locks when modifying shared state (e.g., ducking_lock in WebSocketHandler)
 - **Base64 encoding**: Browser sends/receives audio as base64 strings over Socket.IO, converted to numpy arrays server-side
 - **Device ID persistence**: Not saved - user must select devices on each startup (by design)
-- **PyInstaller temp cleanup**: Program automatically cleans `_MEI*` directories in `%TEMP%` on exit (see [src/utils/cleanup.py](src/utils/cleanup.py))
+- **PyInstaller temp cleanup**: Program automatically cleans `_MEI*` directories in `%TEMP%` on exit (see [src/utils/cleanup.py](../src/utils/cleanup.py))
