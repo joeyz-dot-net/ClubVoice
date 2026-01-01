@@ -65,16 +65,21 @@ class WebSocketHandler:
         @self.socketio.on('connect')
         def handle_connect():
             global _global_connection_count
-            from flask import request
-            client_id = request.sid
-            self.connected_clients.add(client_id)
-            _global_connection_count = len(self.connected_clients)
-            console.print(f"[green]客户端已连接: {client_id}[/green]")
-            # 发送连接确认和当前配置
-            emit('connected', {
-                'client_id': client_id,
-                'duplex_mode': config.audio.duplex_mode
-            })
+            try:
+                from flask import request
+                client_id = request.sid
+                self.connected_clients.add(client_id)
+                _global_connection_count = len(self.connected_clients)
+                console.print(f"[green]客户端已连接: {client_id}[/green]")
+                # 发送连接确认和当前配置
+                emit('connected', {
+                    'client_id': client_id,
+                    'duplex_mode': config.audio.duplex_mode
+                })
+            except Exception as e:
+                console.print(f"[red]连接处理错误: {e}[/red]")
+                import traceback
+                traceback.print_exc()
         
         @self.socketio.on('get_config')
         def handle_get_config():
@@ -84,13 +89,17 @@ class WebSocketHandler:
             })
         
         @self.socketio.on('disconnect')
-        def handle_disconnect():
+        def handle_disconnect(reason=None):
             global _global_connection_count
-            from flask import request
-            client_id = request.sid
-            self.connected_clients.discard(client_id)
-            _global_connection_count = len(self.connected_clients)
-            console.print(f"[yellow]客户端已断开: {client_id}[/yellow]")
+            try:
+                from flask import request
+                client_id = request.sid
+                self.connected_clients.discard(client_id)
+                _global_connection_count = len(self.connected_clients)
+                reason_msg = f" (原因: {reason})" if reason else ""
+                console.print(f"[yellow]客户端已断开: {client_id}{reason_msg}[/yellow]")
+            except Exception as e:
+                console.print(f"[red]断开处理错误: {e}[/red]")
         
         @self.socketio.on('audio_data')
         def handle_audio_data(data):

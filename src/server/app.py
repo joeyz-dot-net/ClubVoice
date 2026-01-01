@@ -33,20 +33,16 @@ from ..config.settings import config
 if config.cors.enabled:
     CORS(app, origins=config.cors.allowed_origins)
 
-# 创建 SocketIO - 使用 threading 模式，兼容性最好
+# 创建 SocketIO - 使用 gevent 模式
 socketio = SocketIO(
     app,
     cors_allowed_origins=config.cors.allowed_origins if config.cors.enabled else "*",
-    async_mode='threading',
+    async_mode='gevent',
     ping_timeout=60,
     ping_interval=25,
     max_http_buffer_size=1e6,
     engineio_logger=False,
-    logger=False,
-    # 添加以下参数修复 "write() before start_response" 错误
-    handle_sigterm=False,  # 禁止 SocketIO 处理 SIGTERM
-    suppress_send=False,   # 不抑制发送
-    always_connect=True,   # 总是尝试连接
+    logger=False
 )
 
 # 添加全局错误处理器 - 防止 "write() before start_response" 错误
@@ -96,8 +92,36 @@ def index():
 
 @app.route('/favicon.ico')
 def favicon():
-    """网站图标 - 返回 204 表示无内容"""
-    return '', 204
+    """网站图标"""
+    return send_from_directory(STATIC_DIR, 'favicon.ico', mimetype='image/x-icon')
+
+
+@app.route('/manifest.json')
+def manifest():
+    """PWA Manifest - 根路径访问"""
+    return send_from_directory(STATIC_DIR, 'manifest.json', mimetype='application/manifest+json')
+
+
+@app.route('/static/manifest.json')
+def static_manifest():
+    """PWA Manifest - static 路径访问"""
+    return send_from_directory(STATIC_DIR, 'manifest.json', mimetype='application/manifest+json')
+
+
+@app.route('/static/sw.js')
+def service_worker():
+    """Service Worker - 需要正确的 MIME 类型和作用域"""
+    response = send_from_directory(STATIC_DIR, 'sw.js', mimetype='application/javascript')
+    # Service Worker 需要设置正确的作用域
+    response.headers['Service-Worker-Allowed'] = '/'
+    return response
+
+
+@app.route('/apple-touch-icon.png')
+@app.route('/apple-touch-icon-precomposed.png')
+def apple_touch_icon():
+    """Apple Touch Icon - iOS Safari 会请求这些图标"""
+    return send_from_directory(STATIC_DIR, 'icon-192.png', mimetype='image/png')
 
 
 @app.route('/health')
@@ -228,6 +252,39 @@ def audio_stream():
         }
     )
     return response
+
+
+# Socket.IO 错误处理
+@socketio.on_error_default
+def default_error_handler(e):
+    """捕获所有 Socket.IO 错误"""
+    print(f"[SocketIO 错误] {type(e).__name__}: {e}")
+    if hasattr(e, '__traceback__'):
+        import traceback
+        print(''.join(traceback.format_tb(e.__traceback__)))
+    return False  # 返回 False 会断开连接
+
+
+# Flask 错误处理
+@app.errorhandler(500)
+def handle_500(error):
+    """处理 500 错误"""
+    print(f"[500 错误] {error}")
+    return {'error': 'Internal Server Error'}, 500
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """捕获所有未处理的异常"""
+    # 跳过 HTTPException，让它们正常处理
+    if isinstance(e, HTTPException):
+        return e
+    
+    print(f"[未处理异常] {type(e).__name__}: {e}")
+    import traceback
+    traceback.print_exc()
+    
+    return {'error': 'Internal Server Error', 'message': str(e)}, 500
 
 
 def create_app():

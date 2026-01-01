@@ -3,6 +3,7 @@
 """
 import sys
 import signal
+import os
 from rich.console import Console
 
 from .bootstrap import Bootstrap
@@ -17,23 +18,34 @@ console = Console()
 # 全局变量，用于清理
 bridge = None
 ws_handler = None
+_exiting = False
 
 
 def signal_handler(sig, frame):
     """处理退出信号"""
+    global _exiting
+    
+    # 防止重复调用
+    if _exiting:
+        return
+    _exiting = True
+    
     console.print("\n[yellow]正在关闭服务...[/yellow]")
     
     # 停止音频处理
     if ws_handler:
-        ws_handler.stop()
+        try:
+            ws_handler.stop()
+        except Exception:
+            pass
     if bridge:
-        bridge.stop()
+        try:
+            bridge.stop()
+        except Exception:
+            pass
     
-    # 清理临时文件 - 已禁用
-    # from .utils.cleanup import cleanup_on_exit
-    # cleanup_on_exit(verbose=False)
-    
-    sys.exit(0)
+    # 使用 os._exit 避免 gevent 的问题
+    os._exit(0)
 
 
 def main():
@@ -86,7 +98,7 @@ def main():
             port=config.server.port,
             debug=config.server.debug,
             use_reloader=False,
-            allow_unsafe_werkzeug=True  # 允许在开发模式下使用 Werkzeug
+            log_output=not config.server.debug  # 生产环境关闭详细日志
         )
         
     except KeyboardInterrupt:

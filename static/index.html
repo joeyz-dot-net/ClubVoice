@@ -3,7 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Club Voice- 实时语音通信</title>
+    <title>Club Voice - 实时语音通信</title>
+    
+    <!-- PWA Manifest - iOS Safari 需要根路径 -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icon-96.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/icon-72.png">
+    
+    <!-- iOS 特定 Meta 标签 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ClubVoice">
+    <link rel="apple-touch-icon" href="/static/icon-152.png">
+    <link rel="apple-touch-icon" sizes="72x72" href="/static/icon-72.png">
+    <link rel="apple-touch-icon" sizes="96x96" href="/static/icon-96.png">
+    <link rel="apple-touch-icon" sizes="128x128" href="/static/icon-128.png">
+    <link rel="apple-touch-icon" sizes="144x144" href="/static/icon-144.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="/static/icon-152.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="/static/icon-192.png">
+    <link rel="apple-touch-icon" sizes="384x384" href="/static/icon-384.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="/static/icon-512.png">
+    
+    <!-- Android / Chrome -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#16213e">
+    <meta name="application-name" content="ClubVoice">
+    
+    <!-- Windows -->
+    <meta name="msapplication-TileColor" content="#16213e">
+    <meta name="msapplication-TileImage" content="/static/icon-144.png">
+    <meta name="msapplication-config" content="none">
+    
+    <!-- 描述和关键词 -->
+    <meta name="description" content="浏览器与 Clubdeck 实时语音通信桥接，支持后台播放">
+    <meta name="keywords" content="ClubVoice,语音通信,实时音频,Clubdeck,WebRTC">
+    <meta name="author" content="ClubVoice Team">
+    
     <style>
         * {
             margin: 0;
@@ -110,6 +148,17 @@
             0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
             70% { box-shadow: 0 0 0 20px rgba(46, 204, 113, 0); }
             100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translate(-50%, 20px);
+                opacity: 0;
+            }
+            to {
+                transform: translate(-50%, 0);
+                opacity: 1;
+            }
         }
 
         .volume-container {
@@ -274,6 +323,8 @@
 
         <div class="nav-link">
             <a href="/static/debug.html">🔧 调试面板</a>
+            <span style="margin: 0 10px;">|</span>
+            <a href="/static/pwa-test.html">📱 PWA 测试</a>
         </div>
     </div>
 
@@ -306,7 +357,203 @@
                 // 双工模式
                 this.duplexMode = 'half';
                 
+                // iOS 后台播放支持
+                this.keepAliveAudio = null;
+                this.silenceBuffer = null;
+                this.setupMediaSession();
+                this.setupVisibilityHandling();
+                this.setupKeepAliveAudio();
+                
                 this.initSocket();
+            }
+
+            // 创建保持后台活跃的隐藏音频元素
+            setupKeepAliveAudio() {
+                // 创建一个非常小的静音 WAV 数据 (1秒 @ 8000Hz mono)
+                const sampleRate = 8000;
+                const duration = 1;
+                const numSamples = sampleRate * duration;
+                const buffer = new ArrayBuffer(44 + numSamples * 2);
+                const view = new DataView(buffer);
+                
+                // WAV header
+                const writeString = (offset, string) => {
+                    for (let i = 0; i < string.length; i++) {
+                        view.setUint8(offset + i, string.charCodeAt(i));
+                    }
+                };
+                
+                writeString(0, 'RIFF');
+                view.setUint32(4, 36 + numSamples * 2, true);
+                writeString(8, 'WAVE');
+                writeString(12, 'fmt ');
+                view.setUint32(16, 16, true); // chunk size
+                view.setUint16(20, 1, true); // PCM
+                view.setUint16(22, 1, true); // mono
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, sampleRate * 2, true); // byte rate
+                view.setUint16(32, 2, true); // block align
+                view.setUint16(34, 16, true); // bits per sample
+                writeString(36, 'data');
+                view.setUint32(40, numSamples * 2, true);
+                
+                // 写入静音数据 (全0)
+                for (let i = 0; i < numSamples; i++) {
+                    view.setInt16(44 + i * 2, 0, true);
+                }
+                
+                // 创建 Blob 和 URL
+                const blob = new Blob([buffer], { type: 'audio/wav' });
+                const url = URL.createObjectURL(blob);
+                
+                // 创建隐藏的 audio 元素
+                this.keepAliveAudio = document.createElement('audio');
+                this.keepAliveAudio.src = url;
+                this.keepAliveAudio.loop = true;
+                this.keepAliveAudio.volume = 0.01; // 几乎静音但不为0
+                this.keepAliveAudio.playsInline = true;
+                this.keepAliveAudio.setAttribute('playsinline', '');
+                this.keepAliveAudio.setAttribute('webkit-playsinline', '');
+                
+                // iOS 需要这些属性
+                this.keepAliveAudio.muted = false;
+                this.keepAliveAudio.preload = 'auto';
+                
+                console.log('✓ Keep-alive 音频已创建');
+            }
+
+            // 启动保持后台活跃的音频
+            startKeepAlive() {
+                if (!this.keepAliveAudio) return;
+                
+                const playPromise = this.keepAliveAudio.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        console.log('✓ Keep-alive 音频已启动');
+                    }).catch(err => {
+                        console.log('Keep-alive 音频启动失败:', err);
+                    });
+                }
+            }
+
+            // 停止保持后台活跃的音频
+            stopKeepAlive() {
+                if (this.keepAliveAudio) {
+                    this.keepAliveAudio.pause();
+                    console.log('Keep-alive 音频已停止');
+                }
+            }
+
+            setupMediaSession() {
+                if ('mediaSession' in navigator) {
+                    // 设置媒体元数据
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: 'ClubVoice 语音通信',
+                        artist: 'Clubdeck Room',
+                        album: '实时语音'
+                    });
+
+                    // 播放控制
+                    navigator.mediaSession.setActionHandler('play', () => {
+                        console.log('MediaSession: 播放');
+                        if (this.audioContext && this.audioContext.state === 'suspended') {
+                            this.audioContext.resume();
+                        }
+                    });
+
+                    navigator.mediaSession.setActionHandler('pause', () => {
+                        console.log('MediaSession: 暂停');
+                        if (this.audioContext && this.audioContext.state === 'running') {
+                            this.audioContext.suspend();
+                        }
+                    });
+
+                    console.log('✓ MediaSession API 已启用');
+                }
+            }
+
+            setupVisibilityHandling() {
+                // 监听页面可见性变化
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) {
+                        console.log('页面进入后台');
+                        this.handleBackgroundMode();
+                    } else {
+                        console.log('页面回到前台');
+                        this.handleForegroundMode();
+                    }
+                });
+            }
+
+            handleBackgroundMode() {
+                // 后台模式处理 - iOS Safari 特殊处理
+                console.log('后台模式: AudioContext 状态:', this.audioContext?.state);
+                
+                // 确保 keep-alive 音频在播放
+                if (this.keepAliveAudio && this.keepAliveAudio.paused && this.audioReady) {
+                    this.startKeepAlive();
+                }
+                
+                // 尝试保持 AudioContext 运行
+                if (this.audioContext && this.audioContext.state === 'suspended' && this.audioReady) {
+                    this.attemptResumeAudio();
+                }
+                
+                // 更新 MediaSession 状态为播放中
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = 'playing';
+                }
+                
+                // iOS: 定期尝试恢复音频
+                if (this.audioReady && !this.backgroundInterval) {
+                    this.backgroundInterval = setInterval(() => {
+                        if (document.hidden && this.audioContext) {
+                            if (this.audioContext.state === 'suspended' || this.audioContext.state === 'interrupted') {
+                                console.log('后台: 尝试恢复 AudioContext...');
+                                this.audioContext.resume().catch(e => {
+                                    console.log('后台恢复失败:', e);
+                                });
+                            }
+                        }
+                    }, 3000); // 每3秒尝试一次
+                }
+            }
+
+            handleForegroundMode() {
+                // 前台模式处理
+                console.log('前台模式: AudioContext 状态:', this.audioContext?.state);
+                
+                // 清理后台定时器
+                if (this.backgroundInterval) {
+                    clearInterval(this.backgroundInterval);
+                    this.backgroundInterval = null;
+                }
+                
+                // 恢复 AudioContext
+                if (this.audioContext && this.audioContext.state === 'suspended' && this.audioReady) {
+                    this.audioContext.resume().then(() => {
+                        console.log('✓ 前台恢复 AudioContext 成功');
+                    }).catch(e => {
+                        console.log('前台恢复失败:', e);
+                    });
+                }
+            }
+
+            attemptResumeAudio() {
+                if (!this.audioContext || !this.audioReady) return;
+                
+                const resumeAttempt = () => {
+                    if (this.audioContext.state === 'suspended') {
+                        this.audioContext.resume().then(() => {
+                            console.log('✓ AudioContext 已恢复');
+                        }).catch(err => {
+                            console.log('恢复失败，1秒后重试:', err);
+                            setTimeout(resumeAttempt, 1000);
+                        });
+                    }
+                };
+                
+                resumeAttempt();
             }
 
             initSocket() {
@@ -393,8 +640,34 @@
             initAudioContext() {
                 if (!this.audioContext) {
                     this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                        sampleRate: this.sampleRate
+                        sampleRate: this.sampleRate,
+                        latencyHint: 'interactive' // iOS 优化
                     });
+                    
+                    // 添加状态监听
+                    this.audioContext.addEventListener('statechange', () => {
+                        console.log('AudioContext 状态:', this.audioContext.state);
+                        if (this.audioContext.state === 'interrupted') {
+                            // iOS 特有：音频被中断
+                            console.log('音频被中断，尝试恢复...');
+                            this.attemptResumeAudio();
+                        }
+                    });
+                    
+                    // iOS: 将 keep-alive audio 连接到 AudioContext
+                    if (this.keepAliveAudio) {
+                        try {
+                            this.keepAliveSource = this.audioContext.createMediaElementSource(this.keepAliveAudio);
+                            // 连接但音量很小
+                            const keepAliveGain = this.audioContext.createGain();
+                            keepAliveGain.gain.value = 0.001; // 几乎静音
+                            this.keepAliveSource.connect(keepAliveGain);
+                            keepAliveGain.connect(this.audioContext.destination);
+                            console.log('✓ Keep-alive 已连接到 AudioContext');
+                        } catch (e) {
+                            console.log('Keep-alive 连接失败:', e);
+                        }
+                    }
                 }
                 
                 if (this.audioContext.state === 'suspended') {
@@ -408,6 +681,14 @@
                 
                 this.audioReady = true;
                 
+                // 启动 keep-alive 音频 (iOS 后台保持)
+                this.startKeepAlive();
+                
+                // 更新 MediaSession 状态
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = 'playing';
+                }
+                
                 // 更新按钮状态
                 const btn = document.getElementById('listenButton');
                 if (btn) {
@@ -415,7 +696,7 @@
                     btn.classList.add('active');
                 }
                 
-                console.log('音频已激活');
+                console.log('✓ 音频已激活 (iOS 后台支持)');
             }
 
             async toggleMic() {
@@ -510,6 +791,11 @@
 
                     if (this.audioReady) {
                         this.playAudioStereo(left, right);
+                        
+                        // 更新 MediaSession 状态（让 iOS 知道音频在播放）
+                        if ('mediaSession' in navigator && navigator.mediaSession.playbackState !== 'playing') {
+                            navigator.mediaSession.playbackState = 'playing';
+                        }
                     }
 
                 } catch (error) {
@@ -607,16 +893,200 @@
             }
         }
 
+        // 检测 iOS Safari
+        function isIOSSafari() {
+            const ua = navigator.userAgent;
+            const iOS = /iPad|iPhone|iPod/.test(ua);
+            const webkit = /WebKit/.test(ua);
+            const chrome = /CriOS|FxiOS|EdgiOS/.test(ua);
+            return iOS && webkit && !chrome;
+        }
+
+        // 显示 PWA 安装提示
+        function showPWAInstallPrompt() {
+            const pwaHint = document.createElement('div');
+            pwaHint.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(46, 204, 113, 0.95);
+                color: #fff;
+                padding: 12px 20px;
+                border-radius: 10px;
+                font-size: 0.85rem;
+                z-index: 1001;
+                max-width: 90%;
+                text-align: center;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+                animation: slideUp 0.3s ease-out;
+                cursor: pointer;
+            `;
+            pwaHint.innerHTML = '✨ 将 ClubVoice 添加到主屏幕，获得更好体验';
+            document.body.appendChild(pwaHint);
+            
+            pwaHint.addEventListener('click', () => {
+                pwaHint.remove();
+            });
+            
+            // 8秒后淡出
+            setTimeout(() => {
+                pwaHint.style.transition = 'opacity 0.5s';
+                pwaHint.style.opacity = '0';
+                setTimeout(() => pwaHint.remove(), 500);
+            }, 8000);
+        }
+
+        // 注册 Service Worker
+        async function registerServiceWorker() {
+            if (!('serviceWorker' in navigator)) {
+                console.log('浏览器不支持 Service Worker');
+                return null;
+            }
+            
+            try {
+                const registration = await navigator.serviceWorker.register('/static/sw.js', {
+                    scope: '/'
+                });
+                
+                console.log('✓ Service Worker 已注册:', registration.scope);
+                
+                // 监听更新
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    console.log('发现 Service Worker 更新');
+                    
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            console.log('新版本可用，刷新页面以更新');
+                            // 可以显示更新提示
+                        }
+                    });
+                });
+                
+                // 定期发送 keep-alive 消息
+                setInterval(() => {
+                    if (registration.active) {
+                        const messageChannel = new MessageChannel();
+                        messageChannel.port1.onmessage = (event) => {
+                            if (event.data && event.data.type === 'PONG') {
+                                console.log('[SW] Keep-alive pong 收到');
+                            }
+                        };
+                        
+                        registration.active.postMessage(
+                            { type: 'KEEP_ALIVE' },
+                            [messageChannel.port2]
+                        );
+                    }
+                }, 30000); // 每30秒
+                
+                return registration;
+                
+            } catch (error) {
+                console.error('Service Worker 注册失败:', error);
+                return null;
+            }
+        }
+
+        // PWA 安装提示
+        let deferredPrompt = null;
+        
+        window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('可以安装 PWA');
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // 显示自定义安装提示
+            setTimeout(() => {
+                showPWAInstallPrompt();
+            }, 3000);
+        });
+
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA 已安装');
+            deferredPrompt = null;
+        });
+
+        // 显示 iOS 使用提示
+        function showIOSHint() {
+            // 检查是否已经是 PWA 模式
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                                 window.navigator.standalone === true;
+            
+            const iosHint = document.createElement('div');
+            iosHint.id = 'iosHint';
+            iosHint.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(241, 196, 15, 0.95);
+                color: #000;
+                padding: 15px 20px;
+                border-radius: 12px;
+                font-size: 0.85rem;
+                z-index: 1000;
+                max-width: 90%;
+                text-align: center;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+                animation: slideUp 0.3s ease-out;
+            `;
+            
+            if (isStandalone) {
+                // 已经是 PWA 模式
+                iosHint.innerHTML = `
+                    <div style="font-size: 1.1rem; margin-bottom: 8px;">✅ PWA 模式已激活</div>
+                    <div>后台播放已启用，可以切换应用或锁屏</div>
+                `;
+                iosHint.style.background = 'rgba(46, 204, 113, 0.95)';
+                iosHint.style.color = '#fff';
+            } else {
+                // 还在浏览器中
+                iosHint.innerHTML = `
+                    <div style="font-size: 1.1rem; margin-bottom: 8px;">💡 获得更好的后台播放体验</div>
+                    <div style="margin-bottom: 10px;">点击 <strong>分享</strong> ➜ <strong>添加到主屏幕</strong></div>
+                    <div style="font-size: 0.75rem; opacity: 0.8;">作为 App 运行可获得更稳定的后台播放</div>
+                `;
+            }
+            
+            document.body.appendChild(iosHint);
+            
+            // 点击关闭
+            iosHint.addEventListener('click', () => {
+                iosHint.style.transition = 'opacity 0.3s';
+                iosHint.style.opacity = '0';
+                setTimeout(() => iosHint.remove(), 300);
+            });
+            
+            // 8秒后淡出
+            setTimeout(() => {
+                if (document.getElementById('iosHint')) {
+                    iosHint.style.transition = 'opacity 0.5s';
+                    iosHint.style.opacity = '0';
+                    setTimeout(() => iosHint.remove(), 500);
+                }
+            }, 8000);
+        }
+
         // 初始化
         let client = null;
         
-        window.onload = () => {
+        window.onload = async () => {
+            // 注册 Service Worker
+            const swRegistration = await registerServiceWorker();
+            
             client = new VoiceClient();
             window.client = client;
             
             // 绑定按钮事件
             document.getElementById('listenButton').addEventListener('click', () => {
                 client.initAudioContext();
+                
+                // 显示 iOS 提示
+                if (isIOSSafari()) {
+                    showIOSHint();
+                }
             });
             
             const micButton = document.getElementById('micButton');
@@ -624,6 +1094,16 @@
                 micButton.addEventListener('click', () => {
                     client.toggleMic();
                 });
+            }
+            
+            // iOS 环境显示初始提示
+            if (isIOSSafari()) {
+                console.log('检测到 iOS Safari，MediaSession API 已启用');
+            }
+            
+            // 检查是否为独立模式（PWA 已安装）
+            if (window.matchMedia('(display-mode: standalone)').matches) {
+                console.log('✓ 运行在 PWA 独立模式');
             }
         };
     </script>
