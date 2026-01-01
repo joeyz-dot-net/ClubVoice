@@ -161,10 +161,18 @@ class AppConfig:
             audio_section['input_device_id_2'] = str(self.audio.input_device_id_2)
         parser['audio'] = audio_section
         
-        # CORS配置
+        # CORS配置 - 使用多行格式
+        cors_origins = self.cors.allowed_origins
+        if len(cors_origins) > 4:  # 如果域名较多，使用多行格式
+            cors_origins_str = cors_origins[0]
+            for origin in cors_origins[1:]:
+                cors_origins_str += ',\n                  ' + origin
+        else:
+            cors_origins_str = ','.join(cors_origins)
+        
         parser['cors'] = {
             'enabled': str(self.cors.enabled).lower(),
-            'allowed_origins': ','.join(self.cors.allowed_origins)
+            'allowed_origins': cors_origins_str
         }
         
         # MPV配置（如果存在）
@@ -178,9 +186,31 @@ class AppConfig:
         try:
             with open(config_path, 'w', encoding='utf-8') as f:
                 parser.write(f)
+                
+            # 手动添加CORS注释（因为configparser不支持注释保留）
+            self._add_cors_comment(config_path)
+                
             print(f"[✓] 配置已保存到 {config_path}")
         except Exception as e:
             print(f"[错误] 保存配置文件失败: {e}")
+    
+    def _add_cors_comment(self, config_path: Path) -> None:
+        """为CORS配置添加注释"""
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 在 [cors] 节添加注释
+            content = content.replace(
+                '[cors]\nenabled = ',
+                '[cors]\n# 允许访问的域名列表\nenabled = '
+            )
+            
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except Exception:
+            # 忽略注释添加失败
+            pass
 
 
 # 全局配置实例 - 自动加载配置文件
