@@ -29,9 +29,9 @@ def signal_handler(sig, frame):
     if bridge:
         bridge.stop()
     
-    # 清理临时文件
-    from .utils.cleanup import cleanup_on_exit
-    cleanup_on_exit(verbose=False)
+    # 清理临时文件 - 已禁用
+    # from .utils.cleanup import cleanup_on_exit
+    # cleanup_on_exit(verbose=False)
     
     sys.exit(0)
 
@@ -101,9 +101,9 @@ def main():
         import traceback
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         
-        # 错误退出时也清理临时文件
-        from .utils.cleanup import cleanup_on_exit
-        cleanup_on_exit(verbose=False)
+        # 错误退出时也清理临时文件 - 已禁用
+        # from .utils.cleanup import cleanup_on_exit
+        # cleanup_on_exit(verbose=False)
         raise
     finally:
         # 确保无论如何都清理资源
