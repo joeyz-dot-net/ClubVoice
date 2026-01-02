@@ -10,6 +10,8 @@ from typing import Optional, Callable
 from rich.console import Console
 
 from .processor import AudioProcessor
+from .voice_detector import VoiceActivityDetector, VoiceDetectionConfig
+from .audio_ducker import AudioDucker
 
 
 console = Console()
@@ -69,6 +71,48 @@ class VBCableBridge:
         
         # 回调
         self.on_audio_received: Optional[Callable[[np.ndarray], None]] = None
+        
+        # === 音频闪避功能 ===
+        from ..config.settings import config
+        
+        self.ducking_enabled = config.audio.ducking_enabled
+        
+        if self.ducking_enabled and mix_mode:
+            # 语音检测器（监测 VB-Cable A / Clubdeck 房间语音）
+            self.voice_detector = VoiceActivityDetector(
+                sample_rate=input_sample_rate,
+                config=VoiceDetectionConfig(
+                    threshold=config.audio.ducking_threshold,
+                    min_duration=config.audio.ducking_min_duration,
+                    release_time=config.audio.ducking_release_time
+                )
+            )
+            
+            # 音频闪避器（控制 VB-Cable B / 音乐音量）
+            self.audio_ducker = AudioDucker(
+                sample_rate=input_sample_rate,
+                normal_gain=1.0,
+                ducked_gain=config.audio.ducking_gain,
+                transition_time=config.audio.ducking_transition_time
+            )
+            
+            console.print(f"\n{'='*60}")
+            console.print(f"[bold cyan]🎵 音频闪避 (Audio Ducking) 已启用[/bold cyan]")
+            console.print(f"{'='*60}")
+            console.print(f"  检测源: VB-Cable A (Clubdeck 房间语音)")
+            console.print(f"  控制源: VB-Cable B (音乐播放)")
+            console.print(f"  语音阈值: {config.audio.ducking_threshold}")
+            console.print(f"  正常音量: 100%")
+            console.print(f"  闪避音量: {int(config.audio.ducking_gain*100)}%")
+            console.print(f"{'='*60}\n")
+        else:
+            self.voice_detector = None
+            self.audio_ducker = None
+            if not mix_mode and config.audio.ducking_enabled:
+                console.print("[dim yellow]⚠️  音频闪避需要启用混音模式 (mix_mode=true)[/dim yellow]")
+        
+        # 调试计数器
+        self._frame_count = 0
         
         console.print(f"[dim]音频桥接器配置:[/dim]")
         console.print(f"[dim]  输入1: {input_channels}ch @ {input_sample_rate}Hz (设备 {input_device_id})[/dim]")
@@ -229,15 +273,76 @@ class VBCableBridge:
         except queue.Full:
             pass  # 队列满时丢弃
     
+    def _calculate_volume(self, audio_data: np.ndarray) -> float:
+        """
+        计算音量 (RMS)
+        
+        Args:
+            audio_data: 音频数据 (int16)
+            
+        Returns:
+            音量值 (0-100)
+        """
+        # 转换为 float32
+        float_data = audio_data.astype(np.float32) / 32768.0
+        
+        # 计算 RMS
+        rms = np.sqrt(np.mean(float_data ** 2))
+        
+        # 转换为百分比 (0-100)
+        return min(100.0, rms * 100.0 * 10.0)
+    
+    def _create_volume_bar(self, volume: float, width: int = 20) -> str:
+        """
+        创建音量条
+        
+        Args:
+            volume: 音量值 (0-100)
+            width: 条宽度
+            
+        Returns:
+            音量条字符串
+        """
+        filled = int(volume / 100.0 * width)
+        empty = width - filled
+        return '█' * filled + '░' * empty
+    
     def _mixer_worker(self):
         """混音工作线程 - 混合两个输入队列的音频"""
         console.print(f"[dim]✓ 混音线程已启动[/dim]")
         
+        import sys
+        
         while self.running:
             try:
                 # 从两个输入队列获取数据
+                # audio1 = VB-Cable A (Clubdeck 房间语音)
+                # audio2 = VB-Cable B (音乐播放)
                 audio1 = self.input_queue.get(timeout=0.05)
                 audio2 = self.input_queue_2.get(timeout=0.05)
+                
+                # === 计算音量 ===
+                volume1 = self._calculate_volume(audio1.flatten())
+                volume2_pre = self._calculate_volume(audio2.flatten())  # 闪避前的音量
+                
+                # === 语音活动检测（针对 Clubdeck 语音）===
+                has_voice = False
+                if self.ducking_enabled and self.voice_detector:
+                    # 检测 Clubdeck 房间中是否有人说话
+                    has_voice = self.voice_detector.detect(audio1.flatten())
+                    
+                    # 根据检测结果控制音乐音量闪避
+                    if self.audio_ducker:
+                        self.audio_ducker.set_ducking(has_voice)
+                
+                # === 应用音频闪避到音乐 ===
+                volume2_post = volume2_pre  # 闪避后的音量
+                if self.ducking_enabled and self.audio_ducker:
+                    # 处理音乐音频，应用音量闪避
+                    audio2_flat = audio2.flatten()
+                    ducked_audio2 = self.audio_ducker.process(audio2_flat)
+                    audio2 = ducked_audio2.reshape(-1, self.browser_channels)
+                    volume2_post = self._calculate_volume(ducked_audio2)
                 
                 # 确保形状一致
                 if audio1.shape != audio2.shape:
@@ -246,21 +351,41 @@ class VBCableBridge:
                     audio1 = audio1.flatten()[:min_len].reshape(-1, self.browser_channels)
                     audio2 = audio2.flatten()[:min_len].reshape(-1, self.browser_channels)
                 
-                # 混音：平均混合（避免削波）
-                mixed = ((audio1.astype(np.int32) + audio2.astype(np.int32)) // 2).astype(np.int16)
+                # 混音：简单相加（音频已被闪避器处理过）
+                # 使用 int32 避免溢出，然后限制到 int16 范围
+                mixed_int32 = audio1.astype(np.int32) + audio2.astype(np.int32)
+                mixed = np.clip(mixed_int32, -32768, 32767).astype(np.int16)
                 
                 # 放入混音队列
                 try:
                     self.mixed_queue.put_nowait(mixed)
                 except queue.Full:
                     pass
+                
+                # === 实时显示音量（每帧刷新）===
+                self._frame_count += 1
+                if self._frame_count % 5 == 0:  # 每5帧刷新一次显示
+                    bar1 = self._create_volume_bar(volume1, 20)
+                    bar2 = self._create_volume_bar(volume2_post, 20)
+                    
+                    # 语音状态指示
+                    voice_icon = "🔊" if has_voice else "  "
+                    
+                    # 单行显示（使用 \r 回到行首）- 包含设备 ID
+                    sys.stdout.write(f"\r音量 | Clubdeck [ID:{self.input_device_id}]: [{bar1}] {volume1:5.1f}% {voice_icon} | 音乐 [ID:{self.input_device_id_2}]: [{bar2}] {volume2_post:5.1f}%  ")
+                    sys.stdout.flush()
                     
             except queue.Empty:
                 continue
             except Exception as e:
                 if self.running:
                     console.print(f"[red]混音错误: {e}[/red]")
+                    import traceback
+                    traceback.print_exc()
         
+        # 退出时换行
+        sys.stdout.write("\n")
+        sys.stdout.flush()
         console.print(f"[dim]✓ 混音线程已停止[/dim]")
     
     def _mpv_callback(self, indata: np.ndarray, frames: int, time_info, status):

@@ -40,6 +40,14 @@ class AudioConfig:
     input_device_id_2: Optional[int] = None # 第二个输入设备ID
     input_sample_rate_2: int = 48000        # 输入设备2采样率
     input_channels_2: int = 2               # 输入设备2声道数
+    
+    # 音频闪避配置
+    ducking_enabled: bool = True
+    ducking_threshold: float = 150.0
+    ducking_gain: float = 0.15
+    ducking_min_duration: float = 0.1
+    ducking_release_time: float = 0.5
+    ducking_transition_time: float = 0.1
 
 
 @dataclass
@@ -103,6 +111,14 @@ class AppConfig:
                         self.audio.input_device_id_2 = int(input_device_id_2)
                     except ValueError:
                         pass
+                
+                # 加载音频闪避配置
+                self.audio.ducking_enabled = parser.getboolean('audio', 'ducking_enabled', fallback=True)
+                self.audio.ducking_threshold = parser.getfloat('audio', 'ducking_threshold', fallback=150.0)
+                self.audio.ducking_gain = parser.getfloat('audio', 'ducking_gain', fallback=0.15)
+                self.audio.ducking_min_duration = parser.getfloat('audio', 'ducking_min_duration', fallback=0.1)
+                self.audio.ducking_release_time = parser.getfloat('audio', 'ducking_release_time', fallback=0.5)
+                self.audio.ducking_transition_time = parser.getfloat('audio', 'ducking_transition_time', fallback=0.1)
             
             # 加载 CORS 配置
             if 'cors' in parser:
@@ -153,7 +169,13 @@ class AppConfig:
         # 音频配置
         audio_section = {
             'duplex_mode': self.audio.duplex_mode,
-            'mix_mode': str(self.audio.mix_mode).lower()
+            'mix_mode': str(self.audio.mix_mode).lower(),
+            'ducking_enabled': str(self.audio.ducking_enabled).lower(),
+            'ducking_threshold': str(self.audio.ducking_threshold),
+            'ducking_gain': str(self.audio.ducking_gain),
+            'ducking_min_duration': str(self.audio.ducking_min_duration),
+            'ducking_release_time': str(self.audio.ducking_release_time),
+            'ducking_transition_time': str(self.audio.ducking_transition_time)
         }
         if self.audio.input_device_id is not None:
             audio_section['input_device_id'] = str(self.audio.input_device_id)
