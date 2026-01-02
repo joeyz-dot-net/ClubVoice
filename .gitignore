@@ -50,3 +50,12 @@ Thumbs.db
 *.exe
 mpv.exe
 *.mp3
+
+# MPV 可执行文件和相关
+mpv.exe
+mpv/
+*.dll
+mpv-*.zip
+src/audio/mpv_controller.py
+test/test_audio_ducking_mpv.py
+MPV_DUCKING_GUIDE.md
