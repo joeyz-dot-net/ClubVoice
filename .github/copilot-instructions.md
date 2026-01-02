@@ -50,24 +50,35 @@ Tasks in `.vscode/tasks.json` handle the full build pipeline:
 
 Use VS Code tasks (Ctrl+Shift+P → "Tasks: Run Task") or run_task tool for automated builds.
 
+**Available tasks:**
+- `Full Build` (default): Complete pipeline with deployment to `\\b560\code\ClubVoice`
+- `Build Only`: PyInstaller build + config.ini copy (local dist/ only)
+- `Build and Deploy Local`: Build + deploy to `D:\Code\ClubVoice-Deploy`
+- `Run App`: Direct Python execution (`python run.py`) 
+- `Run EXE`: Execute built dist/ClubVoice.exe
+
 Build configuration in [ClubVoice.spec](../ClubVoice.spec):
 - Entry point: run.py
 - Bundled: static/ folder, config.ini
-- Hidden imports: engineio.async_drivers.threading, rich modules
+- Hidden imports: engineio.async_drivers.gevent, gevent modules, rich modules
 - Console mode enabled (shows CLI device selector)
 
 ### Hardware Setup Requirements
 
-**Dual VB-Cable isolation** (see [DUAL_CABLE_SETUP.md](../DUAL_CABLE_SETUP.md)):
-- VB-Cable A: Python ↔ Clubdeck communication
-- Hi-Fi Cable (or VB-Cable B): Browser ↔ Python communication
-- Clubdeck must route: Mic Input = Cable A Output, Speaker Output = Cable A Input
-- This architecture eliminates audio feedback loops in full-duplex mode
+**Dual VB-Cable configuration** (see [DUAL_CABLE_SETUP.md](../DUAL_CABLE_SETUP.md)):
+- **Device 27 (CABLE-A Output)**: Python reads Clubdeck room audio (user speech, room effects, no MPV)
+- **Device 26 (CABLE-B Output)**: Python reads MPV background music
+- **CABLE-A Input**: Python writes browser user speech to Clubdeck microphone
+- **Clubdeck configuration**:
+  - Microphone Input = CABLE-A Output (receives browser user speech)
+  - Speaker Output = CABLE-A Input (sends room audio to Python)
+- **MPV configuration**: Outputs to CABLE-B Input (separate from room audio)
 
-**Simplified mixing architecture**:
-- Clubdeck performs hardware mixing of room audio + MPV music
-- Python server receives pre-mixed input, no mixing logic needed
-- MPV outputs to same Hi-Fi Cable Input that Clubdeck uses
+**Audio mixing strategy**:
+- Clubdeck performs zero mixing (receives only browser speech, outputs room+effects only)
+- Python mixes: Clubdeck room audio + MPV music, applies ducking when browser user speaks
+- MPV is controlled separately via named pipe for volume reduction during voice activity
+- Result: Browser hears room + music with automatic ducking
 
 ## Project-Specific Conventions
 
@@ -85,7 +96,7 @@ Build configuration in [ClubVoice.spec](../ClubVoice.spec):
 - **Noise gate**: Client-side threshold 0.01, server-side RMS threshold 150 (int16 range)
 
 ### Threading Model
-- Main thread: Flask-SocketIO event loop (eventlet worker)
+- Main thread: Flask-SocketIO event loop (gevent async mode)
 - Audio input thread: `VBCableBridge._input_stream_callback()` - reads from VB-Cable
 - Audio output thread: `VBCableBridge._output_stream_callback()` - writes to VB-Cable  
 - Forward thread: `WebSocketHandler._forward_audio_to_clients()` - socket broadcasts
@@ -125,6 +136,7 @@ Build configuration in [ClubVoice.spec](../ClubVoice.spec):
 - [tools/simple_volume_monitor.py](../tools/simple_volume_monitor.py): Lightweight terminal-only volume monitor (no Rich dependency)
 - Use volume monitors to test VB-Cable signal flow, calibrate ducking thresholds, and verify device configuration
 - [tools/README.md](../tools/README.md): Detailed usage examples and troubleshooting scenarios
+- **Debug panel**: [static/debug.html](../static/debug.html) - Terminal-style UI with real-time volume meters, parameter adjustment, connection stats, and audio pipeline diagnostics
 
 ## Integration Points
 
@@ -134,6 +146,7 @@ Build configuration in [ClubVoice.spec](../ClubVoice.spec):
 - **MPV**: Named pipe integration for music ducking (volume reduction when voice active), see `config.mpv` settings
 - **VAD + MPV Ducking**: Voice activity in Clubdeck room triggers `VoiceActivityDetector` → `MPVController` reduces music volume to configured level
 - **Cleanup utilities**: [src/utils/cleanup.py](../src/utils/cleanup.py) - PyInstaller temp directory cleanup, project file cleanup, can be run standalone
+- **Automatic cleanup**: [run.py](../run.py) automatically invokes cleanup on exit, cleaning PyInstaller temp directories (`_MEI*` in `%TEMP%`) via delayed batch script
 
 ## Important Notes
 

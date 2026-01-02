@@ -52,13 +52,13 @@ class MPVController:
             self._test_connection()
     
     def _test_connection(self):
-        """测试 MPV pipe 连接"""
+        """Test MPV pipe connection"""
         try:
             self._send_command('{ "command": ["get_property", "volume"] }')
-            print(f"[MPV] ✓ 已连接到 MPV pipe: {self.pipe_path}")
+            print(f"[MPV] * Connected to MPV pipe: {self.pipe_path}")
         except Exception as e:
-            print(f"[MPV] ⚠ 无法连接到 MPV: {e}")
-            print(f"[MPV] 提示: 请在 MPV 中启用 IPC: --input-ipc-server={self.pipe_path}")
+            print(f"[MPV] ! Cannot connect to MPV: {e}")
+            print(f"[MPV] Hint: Enable IPC in MPV: --input-ipc-server={self.pipe_path}")
     
     def _send_command(self, command: str, retry: int = 3) -> bool:
         """
@@ -87,7 +87,7 @@ class MPVController:
                 
             except Exception as e:
                 if attempt == retry - 1:
-                    print(f"[MPV] 发送命令失败: {e}")
+                    print(f"[MPV] Command failed: {e}")
                 time.sleep(0.1)
         
         return False
@@ -179,7 +179,7 @@ class MPVController:
         if self.transition_thread:
             self.transition_thread.join(timeout=1.0)
         
-        # 恢复正常音量
+        # Restore normal volume
         if self.config.enabled and self.current_volume != self.normal_volume:
             self.set_volume(self.normal_volume)
-            print("[MPV] 音量已恢复")
+            print("[MPV] Volume restored")

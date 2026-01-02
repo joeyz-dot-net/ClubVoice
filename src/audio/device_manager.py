@@ -1,5 +1,5 @@
 """
-音频设备管理器 - 按 Host API 分类显示
+Audio Device Manager - display grouped by Host API
 """
 import sounddevice as sd
 from typing import List, Dict, Tuple, Optional
@@ -11,7 +11,8 @@ from rich.panel import Panel
 from ..config.settings import config
 
 
-console = Console()
+# Configure console to avoid Unicode issues on Windows
+console = Console(no_color=True, force_terminal=False, legacy_windows=True)
 
 
 class DeviceManager:
@@ -55,21 +56,21 @@ class DeviceManager:
                 devices_by_hostapi[hostapi] = []
             devices_by_hostapi[hostapi].append(device)
         
-        # 显示设备表格
-        console.print("\n[bold cyan]═══════════════════════════════════════════════════════════[/bold cyan]")
-        console.print("[bold cyan]  🎧 音频设备列表 (按驱动分类)[/bold cyan]")
-        console.print("[bold cyan]═══════════════════════════════════════════════════════════[/bold cyan]\n")
+        # Display device table
+        console.print("\n[bold cyan]=========================================================[/bold cyan]")
+        console.print("[bold cyan]  Audio Devices (by driver)[/bold cyan]")
+        console.print("[bold cyan]=========================================================[/bold cyan]\n")
         
         for hostapi_name in sorted(devices_by_hostapi.keys()):
             devices = devices_by_hostapi[hostapi_name]
             
             table = Table(title=f"[yellow]{hostapi_name}[/yellow]", show_header=True, header_style="bold cyan", border_style="dim")
             table.add_column("ID", width=6, justify="right")
-            table.add_column("设备名称", width=45)
-            table.add_column("输入", justify="center", width=8)
-            table.add_column("输出", justify="center", width=8)
-            table.add_column("采样率", justify="center", width=12)
-            table.add_column("类型", justify="center", width=15)
+            table.add_column("Device Name", width=45)
+            table.add_column("Input", justify="center", width=8)
+            table.add_column("Output", justify="center", width=8)
+            table.add_column("Sample Rate", justify="center", width=12)
+            table.add_column("Type", justify="center", width=15)
             
             for device in devices:
                 name_upper = device['name'].upper()
@@ -224,17 +225,17 @@ class DeviceManager:
         else:
             default_input_id = self._find_best_device("input")
         
-        console.print("[bold yellow]选择输入设备[/bold yellow] [dim](从 Clubdeck 接收音频)[/dim]")
+        console.print("[bold yellow]Select Input Device[/bold yellow] [dim](receives audio from Clubdeck)[/dim]")
         if default_input_id is not None:
             default_device = next((d for d in self.all_devices if d['id'] == default_input_id), None)
             if default_device:
-                console.print(f"[bold green]★ 推荐: ID {default_input_id} - {default_device['name'][:50]}[/bold green]")
+                console.print(f"[bold green]* Recommended: ID {default_input_id} - {default_device['name'][:50]}[/bold green]")
         
         # 允许从所有设备中选择
         all_device_ids = [str(d['id']) for d in self.all_devices]
         
         input_choice = IntPrompt.ask(
-            "请输入设备ID",
+            "Enter device ID",
             default=default_input_id if default_input_id is not None else 0,
             choices=all_device_ids
         )

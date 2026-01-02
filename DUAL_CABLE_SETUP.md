@@ -1,26 +1,41 @@
-# 🎚️ Hi-Fi Cable + VB-Cable 双线缆配置指南
+# 🎚️ VB-Cable A/B 双线缆配置指南
 
 ## 📋 方案概述
 
-使用 **Hi-Fi Cable + VB-Cable** 组合实现完美隔离的全双工语音通信，避免音频回环。
+使用 **VB-Cable A + VB-Cable B** 虚拟音频线缆实现浏览器与 Clubdeck 的完整双向语音通信，同时支持背景音乐混音。
 
 ```
-浏览器 ←──────────────────────────────────────→ Python Server
-         Hi-Fi Cable (2ch, 高品质)
-
-Python Server ←──────────────────────────────→ Clubdeck
-                VB-Cable (2ch, 免费)
+┌─────────────────────────────────────────────────────────┐
+│          浏览器用户                                       │
+│    (麦克风 + 扬声器)                                      │
+│         │         ▲                                     │
+│         │         │ Socket.IO                          │
+│         ▼         │                                     │
+├─────────────────────────────────────────────────────────┤
+│          Python 服务器                                   │
+│                                                         │
+│  输入设备 27 (CABLE-A Output)  ← Clubdeck 房间声音       │
+│  输入设备 26 (CABLE-B Output)  ← MPV 背景音乐           │
+│           │            │                                │
+│           └────┬───────┘                                │
+│                ▼                                        │
+│          混音处理 (Mix + Ducking)                       │
+│                │                                        │
+│                ▼                                        │
+│  输出设备 (CABLE-A Input) → Clubdeck 麦克风            │
+├─────────────────────────────────────────────────────────┤
+│          Clubdeck 房间                                   │
+│    (房间用户 + 音乐)                                     │
+└─────────────────────────────────────────────────────────┘
 ```
 
----
+### 🎯 架构特点
 
-## 🎯 优势
-
-✅ **完全隔离**：两条独立线缆，浏览器和 Clubdeck 音频不会混音  
-✅ **全双工**：同时支持收听和发言，无回环  
-✅ **高音质**：Hi-Fi Cable 支持 192kHz 采样率（本项目使用 48kHz）  
-✅ **免费方案**：VB-Cable 免费，Hi-Fi Cable 可选（或用两条 VB-Cable）  
-✅ **零配置**：程序自动识别并推荐最佳配置  
+✅ **完全隔离**：CABLE-A 负责房间通话，CABLE-B 单独负责音乐  
+✅ **全双工**：浏览器可同时听和说，无回环  
+✅ **音乐混音**：房间声音 + MPV 音乐混合播放给浏览器  
+✅ **动态闪避**：浏览器用户说话时，背景音乐自动降音量到 15%  
+✅ **成本低**：仅需两条免费的 VB-Cable 虚拟线缆  
 
 ---
 
@@ -28,16 +43,16 @@ Python Server ←─────────────────────
 
 ### 1. 安装虚拟音频设备
 
-#### **VB-Cable（免费）**
+**VB-Cable A 和 VB-Cable B**
 - 下载：[https://vb-audio.com/Cable/](https://vb-audio.com/Cable/)
-- 用途：Python ↔ Clubdeck 通信
+- 需要购买或使用虚拟机免费版
+- Windows 11/10 兼容
 
-#### **Hi-Fi Cable（推荐）**
-- 下载：[https://vb-audio.com/Cable/](https://vb-audio.com/Cable/)（页面下方）
-- 用途：浏览器 ↔ Python 通信
-- 特点：高品质，最高 192kHz
-
-> **备选方案**：可以用两条 VB-Cable（需安装 VB-Cable A + B）
+**安装后应该看到**：
+```
+设备 26: CABLE-B Output (VB-Audio Virtual Cable B)
+设备 27: CABLE-A Output (VB-Audio Virtual Cable A)
+```
 
 ---
 
@@ -45,185 +60,344 @@ Python Server ←─────────────────────
 
 ### 2. Clubdeck 音频设置
 
-```
-🎤 输入（麦克风）：CABLE Output (VB-Audio Virtual Cable)
-🔊 输出（扬声器）：CABLE Input (VB-Audio Virtual Cable)
-```
+在 Clubdeck 中配置麦克风和扬声器：
 
-![Clubdeck 配置](https://via.placeholder.com/600x200/1a1a1a/00ff00?text=Clubdeck+%E2%86%94+VB-Cable)
+```
+🎤 输入（麦克风输入设备）
+   → CABLE-A Output  (接收 Python 服务器发送的音频)
 
----
+🔊 输出（扬声器输出设备）
+   → CABLE-A Input   (发送房间声音到 Python 服务器)
+```
 
 ### 3. Python 程序配置
 
-#### **自动配置（推荐）**
-运行程序时会自动检测并推荐：
-```
-🎧 输入设备（从 Clubdeck 接收音频）
-  ★ 1 Hi-Fi Cable Output (VB-Audio Hi-Fi Cable)    2ch  48000 Hz  Hi-Fi Cable
-    2 CABLE Output (VB-Audio Virtual Cable)        2ch  48000 Hz  VB-Cable
+编辑 [config.ini](config.ini)：
 
-🔊 输出设备（发送音频到 Clubdeck）
-  ★ 1 CABLE Input (VB-Audio Virtual Cable)         2ch  48000 Hz  VB-Cable
-    2 Hi-Fi Cable Input (VB-Audio Hi-Fi Cable)     2ch  48000 Hz  Hi-Fi Cable
-```
-
-按 `Enter` 接受推荐配置即可！
-
-#### **手动配置**
-如果需要手动选择，查看设备列表并输入序号。
-
-#### **配置文件**
-编辑 `config.ini`:
 ```ini
 [audio]
-duplex_mode = full  # 双线缆方案必须用全双工
+duplex_mode = full          # 全双工：可同时收听和发言
+mix_mode = true             # 启用混音：合并房间+音乐
+
+# 输入设备 1：CABLE-A Output - 从 Clubdeck 接收房间声音
+input_device_id = 27
+input_sample_rate = 48000
+input_channels = 2
+
+# 输入设备 2：CABLE-B Output - 读取 MPV 背景音乐
+input_device_id_2 = 26
+input_sample_rate_2 = 48000
+input_channels_2 = 2
+
+# 音频闪避配置（浏览器说话时降低音乐音量）
+ducking_enabled = true
+ducking_threshold = 150.0    # 说话检测阈值
+ducking_gain = 0.15          # 说话时音乐降到 15%
+ducking_transition_time = 0.1 # 平滑过渡
 ```
+
+### 4. 启动程序
+
+```powershell
+python run.py
+```
+
+程序启动时会自动检测设备：
+```
+🎧 输入设备（从 Clubdeck 接收音频）
+  ★ 1  27 CABLE-A Output (VB-Audio Virtual Cable A)  2ch  48000 Hz
+
+🎧 输入设备 2（从 MPV 接收音乐）
+  ★ 1  26 CABLE-B Output (VB-Audio Virtual Cable B)  2ch  48000 Hz
+
+🔊 输出设备（发送音频到 Clubdeck）
+  ★ 1  CABLE-A Input (VB-Audio Virtual Cable A)      2ch  48000 Hz
+```
+
+按 `Enter` 接受推荐配置。
 
 ---
 
-### 4. 浏览器音频设置
+## 🔄 音频流向详解
 
-#### **访问网页**
+### 浏览器 → Clubdeck
+
 ```
-http://localhost:5000
+用户在浏览器说话
+    ↓
+Web Audio API 捕获麦克风
+    ↓
+ScriptProcessorNode (2048 samples, 42.67ms)
+    ↓
+转换为 Int16 PCM + Base64 编码
+    ↓
+Socket.IO 发送到 Python 服务器
+    ↓
+解码 Base64 → numpy 数组
+    ↓
+检测说话幅值 > 150 ──→ 触发 MPV 闪避
+    ↓
+降噪 (noise gate) + 高通滤波 (100Hz)
+    ↓
+通过 sounddevice 写入 CABLE-A Input
+    ↓
+Clubdeck 麦克风接收 (CABLE-A Output)
+    ↓
+房间所有人都听到浏览器用户的声音
 ```
 
-#### **麦克风权限**
-首次访问时浏览器会请求麦克风权限，点击 **允许**。
+**延迟**：~60-100ms
 
-#### **设备选择（如果需要）**
-浏览器会自动使用 Hi-Fi Cable 作为输出设备，无需手动配置。
+### Clubdeck + MPV → 浏览器
+
+```
+Clubdeck 房间声音
+    ↓
+CABLE-A Input ──→ Python 服务器读取 (设备 27)
+
+MPV 背景音乐
+    ↓
+CABLE-B Input ──→ Python 服务器读取 (设备 26)
+
+混音处理 (Mixer Thread):
+  房间音量 + MPV 音量 * ducking_factor
+  (如果浏览器说话: 房间 100% + 音乐 15%)
+  (如果浏览器静音: 房间 100% + 音乐 100%)
+    ↓
+处理管道：
+  - 重采样 (如需要)
+  - 声道转换
+  - 平滑过渡
+    ↓
+Base64 编码
+    ↓
+Socket.IO 发送 (play_audio 事件)
+    ↓
+浏览器接收并播放
+```
+
+**延迟**：~50-70ms
 
 ---
 
 ## 🔄 音频流向示意图
 
 ```
-┌─────────────┐         Hi-Fi Cable         ┌──────────────┐
-│   浏览器     │◄──────────────────────────►│ Python 服务器 │
-│  (网页麦克风) │   Output ← Input           │              │
-└─────────────┘                             └──────────────┘
-                                                    ▲
-                                                    │ VB-Cable
-                                                    │ Output ← Input
-                                                    ▼
-                                            ┌──────────────┐
-                                            │   Clubdeck   │
-                                            │  (语音房间)   │
-                                            └──────────────┘
+┌─────────────┐         CABLE-A         ┌──────────────┐
+│   浏览器     │◄──────────────────────►│ Python 服务器 │
+│  (用户麦克风) │   Output ← Input       │              │
+└─────────────┘                         └──────────────┘
+                                              ▲
+                                              │ CABLE-B
+                                              │ Output ← Input
+                                              ▼
+                                      ┌──────────────┐
+                                      │   Clubdeck   │
+                                      │  (语音房间)   │
+                                      └──────────────┘
 ```
 
 ### 数据流详解
 
-1. **浏览器 → Python（通过 Hi-Fi Cable）**
+1. **浏览器 → Clubdeck（通过 CABLE-A）**
    - 浏览器麦克风 → WebRTC 编码 → WebSocket → Python
-   - Python 播放到 `Hi-Fi Cable Input`
+   - Python 处理 → `CABLE-A Input` → Clubdeck 麦克风
 
-2. **Python → 浏览器（通过 Hi-Fi Cable）**
-   - Clubdeck 音频 → `Hi-Fi Cable Output` → Python
-   - Python → WebSocket → 浏览器扬声器
+2. **Clubdeck + MPV → 浏览器（通过 CABLE-A + CABLE-B）**
+   - Clubdeck 房间声音 → `CABLE-A Output` → Python (设备27)
+   - MPV 背景音乐 → `CABLE-B Output` → Python (设备26)
+   - Python 混音 → Base64 编码 → WebSocket → 浏览器扬声器
 
-3. **Python ↔ Clubdeck（通过 VB-Cable）**
-   - Python 发送：`VB-Cable Input` → Clubdeck 麦克风
-   - Python 接收：Clubdeck 扬声器 → `VB-Cable Output`
+3. **Clubdeck 配置**
+   - 麦克风输入 = CABLE-A Output
+   - 扬声器输出 = CABLE-A Input
+   - 不需要配置 CABLE-B（MPV 单独管理）
 
 ---
 
 ## 🧪 测试验证
 
-### 1. 启动程序
+### 1. 验证设备识别
+
+启动程序后，检查终端输出是否正确识别设备 26 和 27。
+
+### 2. 测试 Clubdeck 房间声音
+
+在 Clubdeck 房间中说话，浏览器应该能听到。
+
+**验证方法**：
+```bash
+python tools/volume_monitor.py
+# 选择设备 27
+# 在 Clubdeck 说话，应看到音量波动
+```
+
+### 3. 测试 MPV 音乐
+
+在 MPV 播放音乐，浏览器应该能听到。
+
+**验证方法**：
+```bash
+python tools/volume_monitor.py
+# 选择设备 26
+# 如果 MPV 播放，应看到稳定的音量
+```
+
+### 4. 测试浏览器麦克风
+
+打开 `http://localhost:5000`，开启麦克风：
+
+- 浏览器说话 → Clubdeck 应该听到
+- Clubdeck 有人说话 → 浏览器应该听到
+- 同时进行上述两个 → 应该都能进行（全双工）
+
+### 5. 测试音量闪避
+
+在浏览器开启麦克风并说话：
+
+- MPV 音乐应该自动降音量
+- 停止说话后，音乐逐渐恢复正常音量
+- 过渡应该平滑，不突兀
+
+---
+
+## 🔧 调试工具
+
+### 实时音量监控
+
 ```powershell
-python run.py
+# 完整版（需要 Rich 库）
+python tools/volume_monitor.py
+
+# 简化版（纯终端）
+python tools/simple_volume_monitor.py
 ```
 
-### 2. 检查设备识别
-确认终端显示：
-```
-✓ Hi-Fi Cable Output 作为输入设备（推荐）
-✓ VB-Cable Input 作为输出设备（推荐）
+### WebSocket 诊断
+
+```powershell
+# 检查 Socket.IO 连接
+python diagnose_websocket_v2.py
 ```
 
-### 3. 打开浏览器
-访问 `http://localhost:5000`，确认：
-- 🟢 WebSocket 已连接
-- 📞 全双工模式（绿色指示）
-- 🎤 麦克风按钮可见
+### 调试面板
 
-### 4. 测试音频
-- **收听测试**：Clubdeck 房间有人说话时，浏览器应能听到
-- **发言测试**：点击麦克风按钮，Clubdeck 应能听到你的声音
-- **回环测试**：说话时不应听到自己的回声
+访问 `http://localhost:5000/debug.html` 查看：
+- 🎤 麦克风音量实时波形
+- 📊 接收音量波形
+- 📈 连接状态和统计信息
+- ⚙️ 参数调整界面
 
 ---
 
 ## ❓ 常见问题
 
-### Q1: 我只有一条 VB-Cable，能实现全双工吗？
-**A**: 技术上可以，但容易产生回环。推荐：
-- 方案 1：用 **半双工模式**（只收听，不发言）
-- 方案 2：购买 Hi-Fi Cable 或安装第二条 VB-Cable
+### Q1: 浏览器听不到 Clubdeck 房间声音
 
-### Q2: Hi-Fi Cable 和 VB-Cable 有什么区别？
-**A**: 
-- **VB-Cable**: 免费，2 声道，48kHz，适合大多数场景
-- **Hi-Fi Cable**: 高品质，支持 192kHz，音质更好，适合音乐制作
+**检查项**：
+1. Clubdeck 输出设备是否设置为 "CABLE-A Input"？
+2. 运行 `python tools/volume_monitor.py` 选择设备 27，Clubdeck 房间有声音吗？
+3. config.ini 中 `duplex_mode = full`？
+4. `mix_mode = true`？
 
-### Q3: 可以用两条 VB-Cable 吗？
-**A**: 可以！安装 VB-Cable A + B（需购买或虚拟机），配置方式相同。
+**解决方案**：
+- 重启 Python 程序
+- 检查虚拟线缆驱动是否正确安装
+- 用 `python diagnose_websocket_v2.py` 诊断
 
-### Q4: 程序没有自动选择 Hi-Fi Cable？
-**A**: 检查：
-1. Hi-Fi Cable 驱动已正确安装
-2. Windows 设备管理器中可以看到 "VB-Audio Hi-Fi Cable"
-3. 重启程序，手动选择 Hi-Fi Cable 设备
+### Q2: Clubdeck 听不到浏览器声音
 
-### Q5: 为什么推荐 Hi-Fi Cable 做输入，VB-Cable 做输出？
-**A**: 
-- **输入（Hi-Fi）**: 从 Clubdeck 接收音频，高音质体验更好
-- **输出（VB-Cable）**: 发送到 Clubdeck，免费方案足够
-- 这样既省钱又保证音质
+**检查项**：
+1. Clubdeck 麦克风输入是否设置为 "CABLE-A Output"？
+2. 浏览器麦克风权限是否已授予？
+3. 浏览器是否开启了麦克风？（应有 🎤 图标）
+4. config.ini 中 `duplex_mode = full`？
 
----
+**解决方案**：
+- 在浏览器允许麦克风权限
+- 检查 WebSocket 连接（访问 debug.html）
+- 查看服务器日志是否有错误信息
 
-## 🎛️ 高级配置
+### Q3: 音量闪避不工作
 
-### 采样率匹配
-程序默认使用 **48000 Hz**，Hi-Fi Cable 和 VB-Cable 都支持。
+**症状**：浏览器说话时，MPV 音乐没有自动降音量
 
-如需更高音质（音乐制作场景），可修改 `config.ini`:
-```ini
-[audio]
-sample_rate = 96000
-input_sample_rate = 96000
-output_sample_rate = 48000
+**检查项**：
+1. config.ini 中 `ducking_enabled = true`？
+2. `ducking_threshold = 150` 是否合理？（可尝试 100-200）
+3. MPV 是否正在播放？
+4. 浏览器的说话幅值是否超过阈值？
+
+**调试**：
+```bash
+python tools/volume_monitor.py
+# 选择设备 26 (MPV)
+# 在浏览器说话，观察 MPV 音量是否下降到 15%
 ```
 
-### 缓冲区调整
-降低延迟（可能增加 CPU 占用）：
+### Q4: 声音卡顿或延迟大
+
+**原因**：
+- 缓冲区太大
+- CPU 占用过高
+- 采样率不匹配
+
+**解决方案**：
 ```ini
 [audio]
-chunk_size = 256  # 默认 512
+chunk_size = 256      # 从 512 改小（降低延迟，增加 CPU）
+input_sample_rate = 48000   # 确保都是 48000Hz
 ```
 
+### Q5: 有明显回声或自己听到自己的声音
+
+**原因**：
+- Web Audio API 的 echoCancellation 不够完美
+- Clubdeck 的 AEC 失效
+- 房间中有多个音箱
+
+**解决方案**：
+1. 检查浏览器隐私设置，允许麦克风权限
+2. 在 Clubdeck 中降低麦克风增益
+3. 降低 `ducking_gain` 参数（从 0.15 改为 0.1）
+4. 用 debug.html 观察麦克风和接收音量，验证是否真的有回声
+
 ---
 
-## 📊 性能数据
+## 📊 性能参考
 
-| 配置 | 延迟 | CPU 占用 | 带宽 |
-|------|------|---------|------|
-| 单 VB-Cable 半双工 | ~50ms | 3-5% | 2 Mbps |
-| 双线缆全双工 | ~60ms | 5-8% | 4 Mbps |
-| Hi-Fi 96kHz | ~30ms | 8-12% | 8 Mbps |
+| 指标 | 值 |
+|------|-----|
+| **采样率** | 48000 Hz |
+| **声道数** | 2 (立体声) |
+| **缓冲区** | 512 frames = 10.67ms |
+| **发送周期** | 42.67ms (2048 samples) |
+| **往返延迟** | ~100-150ms |
+| **CPU 占用** | 3-8% |
+| **网络带宽** | 3-4 Mbps |
 
 ---
 
-## 🎉 总结
+## 🎉 快速开始检查清单
 
-使用 **Hi-Fi Cable + VB-Cable** 双线缆方案，您可以：
-- ✅ 同时收听和发言（全双工）
-- ✅ 无音频回环或反馈
-- ✅ 高品质音频体验
-- ✅ 零配置自动识别
+- [ ] 安装 VB-Cable A 和 VB-Cable B
+- [ ] 在 Clubdeck 中配置输入为 CABLE-A Output，输出为 CABLE-A Input
+- [ ] 编辑 config.ini（设置 device 26 和 27）
+- [ ] 运行 `python run.py`
+- [ ] 按 Enter 接受推荐配置
+- [ ] 打开浏览器 `http://localhost:5000`
+- [ ] 测试麦克风：允许权限
+- [ ] 在 Clubdeck 房间说话 → 浏览器应听到
+- [ ] 在浏览器说话 → Clubdeck 应听到
+- [ ] 播放 MPV 音乐 → 浏览器应听到
+- [ ] 在浏览器说话 → MPV 音乐应自动降音量
 
-**立即开始**: 安装两条虚拟线缆 → 运行 `python run.py` → 打开浏览器 → 开始通话！
+**一切正常？恭喜！开始享受全双工语音通信吧！🎉**
+
+---
+
+## 参考文档
+
+- [快速参考](doc/QUICK_REFERENCE.md) - 常见任务和解决方案
+- [AI 代理指南](.github/copilot-instructions.md) - 架构和技术细节
+- [项目完成报告](doc/PROJECT_COMPLETION_REPORT.md) - 项目历史和改进记录

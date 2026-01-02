@@ -36,12 +36,19 @@ pyinstaller ClubVoice.spec -y
 
 ### 选择正确的设备
 
-**问题**: 应用选择了 16ch CABLE 设备
+**当前系统配置**：
+```
+设备 26: CABLE-B Output (MPV 音乐源)
+设备 27: CABLE-A Output (Clubdeck 房间声音)
+```
 
-**解决方案**: 应用已优化以自动选择 2ch 设备。如需手动选择：
-- 在设备列表中查找 **`CABLE Output (VB-Audio Virtual Cable) - 2ch`**
-- 避免名称中包含 `16ch` 的设备
-- 推荐的设备会用 ★ 标记
+**推荐配置**：
+- 输入设备：设备 27 (CABLE-A Output) - 从 Clubdeck 接收房间声音
+- 输入设备 2：设备 26 (CABLE-B Output) - 从 MPV 接收背景音乐
+- 输出设备：CABLE-A Input - 发送音频到 Clubdeck 麦克风
+
+**自动识别**：
+程序会自动检测这些设备并推荐，按 Enter 接受即可。
 
 **代码位置**: [src/audio/device_manager.py#L283-L310](src/audio/device_manager.py#L283-L310)
 

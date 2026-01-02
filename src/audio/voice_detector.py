@@ -45,9 +45,9 @@ class VoiceActivityDetector:
             self.config.release_time * sample_rate / samples_per_frame
         ))
         
-        print(f"[VAD] 初始化 - 阈值: {self.config.threshold}, "
-              f"最小持续: {self.config.min_duration}s, "
-              f"释放时间: {self.config.release_time}s")
+        print(f"[VAD] Initialized - threshold: {self.config.threshold}, "
+              f"min_duration: {self.config.min_duration}s, "
+              f"release_time: {self.config.release_time}s")
     
     def detect(self, audio_data: np.ndarray) -> bool:
         """

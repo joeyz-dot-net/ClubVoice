@@ -114,6 +114,14 @@ class AppConfig:
                     except ValueError:
                         pass
                 
+                # 添加 output_device_id 读取
+                output_device_id = parser.get('audio', 'output_device_id', fallback=None)
+                if output_device_id is not None:
+                    try:
+                        self.audio.output_device_id = int(output_device_id)
+                    except ValueError:
+                        pass
+                
                 # 加载混音配置
                 self.audio.mix_mode = parser.getboolean('audio', 'mix_mode', fallback=False)
                 input_device_id_2 = parser.get('audio', 'input_device_id_2', fallback=None)
@@ -149,12 +157,12 @@ class AppConfig:
                 self.mpv.normal_volume = parser.getint('mpv', 'normal_volume', fallback=100)
                 self.mpv.ducking_volume = parser.getint('mpv', 'ducking_volume', fallback=15)
             
-            print(f"[✓] 已从 {config_path} 加载服务器配置")
+            print(f"[OK] Config loaded from {config_path}")
             
         except configparser.Error as e:
-            print(f"[错误] 配置文件格式错误: {e}")
+            print(f"[ERROR] Config file error: {e}")
         except Exception as e:
-            print(f"[错误] 加载配置文件失败: {e}")
+            print(f"[ERROR] Failed to load config: {e}")
         
         return self
     
@@ -197,8 +205,14 @@ class AppConfig:
         }
         if self.audio.input_device_id is not None:
             audio_section['input_device_id'] = str(self.audio.input_device_id)
+        
+        # 添加 output_device_id 保存
+        if self.audio.output_device_id is not None:
+            audio_section['output_device_id'] = str(self.audio.output_device_id)
+            
         if self.audio.input_device_id_2 is not None:
             audio_section['input_device_id_2'] = str(self.audio.input_device_id_2)
+        
         parser['audio'] = audio_section
         
         # CORS配置 - 使用多行格式
@@ -227,12 +241,12 @@ class AppConfig:
             with open(config_path, 'w', encoding='utf-8') as f:
                 parser.write(f)
                 
-            # 手动添加CORS注释（因为configparser不支持注释保留）
+            # Manual add CORS comment (configparser doesn't preserve comments)
             self._add_cors_comment(config_path)
                 
-            print(f"[✓] 配置已保存到 {config_path}")
+            print(f"[OK] Config saved to {config_path}")
         except Exception as e:
-            print(f"[错误] 保存配置文件失败: {e}")
+            print(f"[ERROR] Failed to save config: {e}")
     
     def _add_cors_comment(self, config_path: Path) -> None:
         """为CORS配置添加注释"""

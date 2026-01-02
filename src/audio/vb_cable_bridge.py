@@ -59,12 +59,16 @@ class VBCableBridge:
         self.input_queue: queue.Queue = queue.Queue(maxsize=200)   # 从设备1接收
         self.input_queue_2: queue.Queue = queue.Queue(maxsize=200) if mix_mode else None  # 从设备2接收
         self.mixed_queue: queue.Queue = queue.Queue(maxsize=200)   # 混音后的输出队列
+        self.output_queue: queue.Queue = queue.Queue(maxsize=200)  # 发送到Clubdeck的队列
         
         # 状态
         self.running = False
         self.input_stream: Optional[sd.InputStream] = None
         self.input_stream_2: Optional[sd.InputStream] = None  # 第二个输入流
         self.output_stream: Optional[sd.OutputStream] = None  # 保留但可能不使用
+        
+        # 输出缓冲区
+        self.output_buffer = np.zeros(0, dtype=np.int16)
         
         # 混音线程
         self.mixer_thread: Optional[threading.Thread] = None
@@ -92,13 +96,13 @@ class VBCableBridge:
             self.mpv_controller = MPVController(config.mpv)
             
             console.print(f"\n{'='*60}")
-            console.print(f"[bold cyan]🎵 音频闪避 (Audio Ducking) 已启用[/bold cyan]")
+            console.print(f"[bold cyan]* Audio Ducking enabled[/bold cyan]")
             console.print(f"{'='*60}")
-            console.print(f"  检测源: VB-Cable A (Clubdeck 房间语音)")
-            console.print(f"  控制目标: MPV 音乐播放器 (通过 Named Pipe)")
-            console.print(f"  语音阈值: {config.audio.ducking_threshold}")
-            console.print(f"  正常音量: {config.mpv.normal_volume}%")
-            console.print(f"  闪避音量: {config.mpv.ducking_volume}%")
+            console.print(f"  Detection source: VB-Cable A (Clubdeck room audio)")
+            console.print(f"  Control target: MPV music player (via Named Pipe)")
+            console.print(f"  Voice threshold: {config.audio.ducking_threshold}")
+            console.print(f"  Normal volume: {config.mpv.normal_volume}%")
+            console.print(f"  Ducking volume: {config.mpv.ducking_volume}%")
             console.print(f"  MPV Pipe: {config.mpv.pipe_path}")
             console.print(f"{'='*60}\n")
         else:
@@ -108,16 +112,16 @@ class VBCableBridge:
         # 调试计数器
         self._frame_count = 0
         
-        console.print(f"[dim]音频桥接器配置:[/dim]")
-        console.print(f"[dim]  输入1: {input_channels}ch @ {input_sample_rate}Hz (设备 {input_device_id})[/dim]")
+        console.print(f"[dim]Audio bridge configuration:[/dim]")
+        console.print(f"[dim]  Input 1: {input_channels}ch @ {input_sample_rate}Hz (device {input_device_id})[/dim]")
         if mix_mode and input_device_id_2 is not None:
-            console.print(f"[dim]  输入2: {self.input_channels_2}ch @ {self.input_sample_rate_2}Hz (设备 {input_device_id_2})[/dim]")
-        console.print(f"[dim]  浏览器: {browser_channels}ch @ {browser_sample_rate}Hz[/dim]")
+            console.print(f"[dim]  Input 2: {self.input_channels_2}ch @ {self.input_sample_rate_2}Hz (device {input_device_id_2})[/dim]")
+        console.print(f"[dim]  Browser: {browser_channels}ch @ {browser_sample_rate}Hz[/dim]")
         console.print(f"[dim]  Chunk Size: {chunk_size} frames[/dim]")
         if mix_mode:
-            console.print(f"[yellow]✓ 模式: 双输入混音[/yellow]")
+            console.print(f"[yellow]* Mode: Dual-input mixing[/yellow]")
         else:
-            console.print(f"[yellow]✓ 模式: 单向接收（仅监听）[/yellow]")
+            console.print(f"[yellow]* Mode: Single-direction receive (listen-only)[/yellow]")
     
     def _resample(self, audio_data: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
         """简单的线性插值重采样"""
@@ -302,8 +306,8 @@ class VBCableBridge:
         return '█' * filled + '░' * empty
     
     def _mixer_worker(self):
-        """混音工作线程 - 混合两个输入队列的音频"""
-        console.print(f"[dim]✓ 混音线程已启动[/dim]")
+        """Mixing worker thread - combines audio from two input queues"""
+        console.print(f"[dim]* Mixing thread started[/dim]")
         
         import sys
         
@@ -367,14 +371,14 @@ class VBCableBridge:
                 continue
             except Exception as e:
                 if self.running:
-                    console.print(f"[red]混音错误: {e}[/red]")
+                    console.print(f"[red]Mixing error: {e}[/red]")
                     import traceback
                     traceback.print_exc()
         
         # 退出时换行
         sys.stdout.write("\n")
         sys.stdout.flush()
-        console.print(f"[dim]✓ 混音线程已停止[/dim]")
+        console.print(f"[dim]* Mixing thread stopped[/dim]")
     
     def _mpv_callback(self, indata: np.ndarray, frames: int, time_info, status):
         """MPV 输入流回调 - 接收 MPV 音乐，缓存以供混音使用"""
@@ -445,7 +449,7 @@ class VBCableBridge:
                 if self.output_device_id < 0 or self.output_device_id >= len(devices):
                     raise ValueError(f"输出设备 ID {self.output_device_id} 无效（总设备数: {len(devices)}）")
         except Exception as e:
-            console.print(f"[red]设备验证失败: {e}[/red]")
+            console.print(f"[red]Device validation failed: {e}[/red]")
             self.running = False
             raise
         
@@ -460,7 +464,7 @@ class VBCableBridge:
                 callback=self._input_callback
             )
             self.input_stream.start()
-            console.print(f"[dim]✓ 输入流1已启动: 设备 {self.input_device_id}, {self.input_sample_rate}Hz, {self.input_channels}ch[/dim]")
+            console.print(f"[dim]* Input stream 1 started: device {self.input_device_id}, {self.input_sample_rate}Hz, {self.input_channels}ch[/dim]")
             
             # 如果启用混音模式，启动第二个输入流
             if self.mix_mode and self.input_device_id_2 is not None:
@@ -473,7 +477,7 @@ class VBCableBridge:
                     callback=self._input_callback_2
                 )
                 self.input_stream_2.start()
-                console.print(f"[dim]✓ 输入流2已启动: 设备 {self.input_device_id_2}, {self.input_sample_rate_2}Hz, {self.input_channels_2}ch[/dim]")
+                console.print(f"[dim]* Input stream 2 started: device {self.input_device_id_2}, {self.input_sample_rate_2}Hz, {self.input_channels_2}ch[/dim]")
                 
                 # 启动混音线程
                 self.mixer_thread = threading.Thread(target=self._mixer_worker, daemon=True)
@@ -490,11 +494,11 @@ class VBCableBridge:
                     callback=self._output_callback
                 )
                 self.output_stream.start()
-                console.print(f"[dim]✓ 输出流已启动: {self.output_sample_rate}Hz, {self.output_channels}ch[/dim]")
+                console.print(f"[dim]* Output stream started: {self.output_sample_rate}Hz, {self.output_channels}ch[/dim]")
             else:
-                console.print(f"[dim]⚠ 单向接收模式：未启动输出流[/dim]")
+                console.print(f"[dim]! Half-duplex mode: output stream not started[/dim]")
             
-            console.print("[green]✓ 音频桥接已启动[/green]")
+            console.print("[green]* Audio bridge started[/green]")
         except Exception as e:
             console.print(f"[red]启动音频流失败: {e}[/red]")
             # 清理已启动的流

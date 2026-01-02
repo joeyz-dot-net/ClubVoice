@@ -70,14 +70,14 @@ class WebSocketHandler:
                 client_id = request.sid
                 self.connected_clients.add(client_id)
                 _global_connection_count = len(self.connected_clients)
-                console.print(f"[green]客户端已连接: {client_id}[/green]")
+                console.print(f"[green]Client connected: {client_id}[/green]")
                 # 发送连接确认和当前配置
                 emit('connected', {
                     'client_id': client_id,
                     'duplex_mode': config.audio.duplex_mode
                 })
             except Exception as e:
-                console.print(f"[red]连接处理错误: {e}[/red]")
+                console.print(f"[red]Connection handler error: {e}[/red]")
                 import traceback
                 traceback.print_exc()
         
@@ -96,17 +96,17 @@ class WebSocketHandler:
                 client_id = request.sid
                 self.connected_clients.discard(client_id)
                 _global_connection_count = len(self.connected_clients)
-                reason_msg = f" (原因: {reason})" if reason else ""
-                console.print(f"[yellow]客户端已断开: {client_id}{reason_msg}[/yellow]")
+                reason_msg = f" (reason: {reason})" if reason else ""
+                console.print(f"[yellow]Client disconnected: {client_id}{reason_msg}[/yellow]")
             except Exception as e:
-                console.print(f"[red]断开处理错误: {e}[/red]")
+                console.print(f"[red]Disconnection handler error: {e}[/red]")
         
         @self.socketio.on('audio_data')
         def handle_audio_data(data):
             """接收浏览器音频并转发到 Clubdeck"""
             # 半双工模式下忽略浏览器麦克风
             if config.audio.duplex_mode == 'half':
-                console.print(f"[dim red]半双工模式，忽略浏览器音频[/dim red]")
+                console.print(f"[dim red]Half-duplex mode, ignoring browser audio[/dim red]")
                 return
             
             try:
@@ -119,7 +119,7 @@ class WebSocketHandler:
                     # 调试：总是显示浏览器音频接收（每隔一段时间）
                     import random
                     if random.randint(1, 50) == 1:  # 1/50 概率显示
-                        console.print(f"[dim blue]浏览器音频接收: {max_amplitude} 幅度, {len(audio_array)} samples[/dim blue]")
+                        console.print(f"[dim blue]Browser audio received: {max_amplitude} amplitude, {len(audio_array)} samples[/dim blue]")
                     
                     # 检测是否在说话（用于 ducking）
                     if self.ducking_enabled:
@@ -135,7 +135,7 @@ class WebSocketHandler:
                     # 发送到 VB-Cable (Clubdeck)
                     self.bridge.send_to_clubdeck(audio_array)
             except Exception as e:
-                console.print(f"[red]处理音频数据错误: {e}[/red]")
+                console.print(f"[red]Audio data processing error: {e}[/red]")
         
         @self.socketio.on('join_room')
         def handle_join_room(data):
@@ -201,7 +201,7 @@ class WebSocketHandler:
                             'channels': self.bridge.browser_channels
                         })
             except Exception as e:
-                console.print(f"[red]转发音频错误: {e}[/red]")
+                console.print(f"[red]Audio forwarding error: {e}[/red]")
             
             time.sleep(0.01)
     
@@ -216,7 +216,7 @@ class WebSocketHandler:
         self.forward_thread = threading.Thread(target=self._forward_clubdeck_audio, daemon=True)
         self.forward_thread.start()
         
-        console.print("[green]✓ WebSocket 处理器已启动[/green]")
+        console.print("[green]* WebSocket handler started[/green]")
     
     def stop(self):
         """停止处理器"""
@@ -235,7 +235,7 @@ class WebSocketHandler:
         self.current_volume = 1.0
         self.target_volume = 1.0
         
-        console.print("[yellow]WebSocket 处理器已停止[/yellow]")
+        console.print("[yellow]WebSocket handler stopped[/yellow]")
     
     @property
     def client_count(self) -> int:

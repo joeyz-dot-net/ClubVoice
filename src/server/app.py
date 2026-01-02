@@ -33,7 +33,7 @@ from ..config.settings import config
 if config.cors.enabled:
     CORS(app, origins=config.cors.allowed_origins)
 
-# 创建 SocketIO - 使用 gevent 模式
+# Create SocketIO - use gevent mode with socket reuse options
 socketio = SocketIO(
     app,
     cors_allowed_origins=config.cors.allowed_origins if config.cors.enabled else "*",
@@ -42,7 +42,11 @@ socketio = SocketIO(
     ping_interval=25,
     max_http_buffer_size=1e6,
     engineio_logger=False,
-    logger=False
+    logger=False,
+    # Enable socket address reuse to avoid "Address already in use" errors
+    socket_options={
+        'SO_REUSEADDR': 1
+    }
 )
 
 # 添加全局错误处理器 - 防止 "write() before start_response" 错误
@@ -257,30 +261,30 @@ def audio_stream():
 # Socket.IO 错误处理
 @socketio.on_error_default
 def default_error_handler(e):
-    """捕获所有 Socket.IO 错误"""
-    print(f"[SocketIO 错误] {type(e).__name__}: {e}")
+    """Handle all Socket.IO errors"""
+    print(f"[SocketIO Error] {type(e).__name__}: {e}")
     if hasattr(e, '__traceback__'):
         import traceback
         print(''.join(traceback.format_tb(e.__traceback__)))
-    return False  # 返回 False 会断开连接
+    return False  # Returning False will disconnect
 
 
 # Flask 错误处理
 @app.errorhandler(500)
 def handle_500(error):
-    """处理 500 错误"""
-    print(f"[500 错误] {error}")
+    """Handle 500 errors"""
+    print(f"[500 Error] {error}")
     return {'error': 'Internal Server Error'}, 500
 
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    """捕获所有未处理的异常"""
-    # 跳过 HTTPException，让它们正常处理
+    """Handle all unhandled exceptions"""
+    # Skip HTTPException, let them be handled normally
     if isinstance(e, HTTPException):
         return e
     
-    print(f"[未处理异常] {type(e).__name__}: {e}")
+    print(f"[Unhandled Exception] {type(e).__name__}: {e}")
     import traceback
     traceback.print_exc()
     

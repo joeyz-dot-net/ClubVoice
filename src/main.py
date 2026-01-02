@@ -1,5 +1,5 @@
 """
-主入口
+Main Entry Point
 """
 import sys
 import signal
@@ -13,7 +13,8 @@ from .server.app import create_app
 from .server.websocket_handler import WebSocketHandler
 
 
-console = Console()
+# Configure console to avoid Unicode issues on Windows
+console = Console(no_color=True, force_terminal=False, legacy_windows=True)
 
 # 全局变量，用于清理
 bridge = None
@@ -64,9 +65,12 @@ def main():
         # 创建音频桥接器 - 支持单输入或双输入混音模式
         bridge = VBCableBridge(
             input_device_id=audio_config.input_device_id,
+            output_device_id=audio_config.output_device_id,
             browser_sample_rate=audio_config.sample_rate,
             input_sample_rate=audio_config.input_sample_rate,
+            output_sample_rate=audio_config.output_sample_rate,
             input_channels=audio_config.input_channels,
+            output_channels=audio_config.output_channels,
             browser_channels=audio_config.channels,
             chunk_size=audio_config.chunk_size,
             # 混音模式参数
@@ -82,33 +86,34 @@ def main():
         # 创建 WebSocket 处理器
         ws_handler = WebSocketHandler(socketio, bridge)
         
-        # 启动音频桥接
+        # Start audio bridge
         bridge.start()
         
-        # 启动 WebSocket 处理器
+        # Start WebSocket handler
         ws_handler.start()
         
-        console.print("\n[bold green]服务器启动成功！[/bold green]")
-        console.print(f"[cyan]请在浏览器中打开: http://localhost:{config.server.port}[/cyan]\n")
+        console.print("\n[bold green]Server started successfully![/bold green]")
+        console.print(f"[cyan]Open in browser: http://localhost:{config.server.port}[/cyan]\n")
         
-        # 启动服务器
+        # Start server with socket reuse options
         socketio.run(
             app,
             host=config.server.host,
             port=config.server.port,
             debug=config.server.debug,
             use_reloader=False,
-            log_output=not config.server.debug  # 生产环境关闭详细日志
+            log_output=not config.server.debug,  # Production: disable detailed logging
+            allow_unsafe_werkzeug=True  # Allow socket address reuse
         )
         
     except KeyboardInterrupt:
         signal_handler(None, None)
     except Exception as e:
         console.print(f"\n[bold red]{'=' * 50}[/bold red]")
-        console.print(f"[bold red]程序错误[/bold red]")
+        console.print(f"[bold red]Application Error[/bold red]")
         console.print(f"[bold red]{'=' * 50}[/bold red]")
-        console.print(f"[red]错误类型: {type(e).__name__}[/red]")
-        console.print(f"[red]错误信息: {e}[/red]")
+        console.print(f"[red]Error Type: {type(e).__name__}[/red]")
+        console.print(f"[red]Error Message: {e}[/red]")
         console.print()
         import traceback
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
