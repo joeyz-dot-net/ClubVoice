@@ -13,13 +13,15 @@ Browser <--Socket.IO--> Python Server <--VB-Cable--> Clubdeck
 
 ### Key Components
 
-1. **Flask Server** ([src/server/app.py](src/server/app.py)) - HTTP + Socket.IO server hosting static files
+1. **Flask Server** ([src/server/app.py](src/server/app.py)) - HTTP + Socket.IO server hosting static files, `/status` endpoint for health checks
 2. **WebSocket Handler** ([src/server/websocket_handler.py](src/server/websocket_handler.py)) - Manages client connections, implements server-side audio ducking (reduces received volume when mic is active)
 3. **VB-Cable Bridge** ([src/audio/vb_cable_bridge.py](src/audio/vb_cable_bridge.py)) - Single input/output architecture receives Clubdeck+MPV pre-mixed audio and sends browser audio back
 4. **Device Manager** ([src/audio/device_manager.py](src/audio/device_manager.py)) - Interactive CLI for selecting VB-Cable devices with Rich UI, auto-detects VoiceMeeter/Hi-Fi Cable/VB-Cable devices
 5. **Audio Processor** ([src/audio/processor.py](src/audio/processor.py)) - Noise gate, high-pass filter (100Hz cutoff), numpy/base64 conversions
 6. **Bootstrap** ([src/bootstrap.py](src/bootstrap.py)) - Startup wizard with device selection and configuration summary
-7. **Web Client** ([static/js/client.js](static/js/client.js)) - Web Audio API for mic capture, AudioBufferSourceNode for smooth playback with queuing
+7. **Web Client** ([static/js/client.js](static/js/client.js)) - Web Audio API (`VoiceClient` class) for mic capture, AudioBufferSourceNode for smooth playback with queuing
+8. **MPV Controller** ([src/audio/mpv_controller.py](src/audio/mpv_controller.py)) - Controls MPV music player via Windows Named Pipe (`\\.\pipe\mpv-pipe`), reduces volume during voice activity
+9. **Voice Detector** ([src/audio/voice_detector.py](src/audio/voice_detector.py)) - VAD (Voice Activity Detection) for triggering MPV ducking, configurable RMS threshold and timing parameters
 
 ### Audio Pipeline Details
 
@@ -70,9 +72,10 @@ Build configuration in [ClubVoice.spec](../ClubVoice.spec):
 ## Project-Specific Conventions
 
 ### Configuration Management
-- [config.ini](../config.ini): Server host/port, duplex mode ('half' = listen-only, 'full' = bidirectional), MPV pipe settings, mixing mode
-- [src/config/settings.py](../src/config/settings.py): Dataclasses for AudioConfig, ServerConfig with defaults
+- [config.ini](../config.ini): Server host/port, duplex mode ('half' = listen-only, 'full' = bidirectional), MPV pipe settings, mixing mode, CORS allowed origins
+- [src/config/settings.py](../src/config/settings.py): Dataclasses for AudioConfig, ServerConfig, CorsConfig, MPVConfig with defaults
 - Device IDs and sample rates configured at runtime via Bootstrap CLI, not persisted
+- CORS origins: Multi-line format in config.ini supports multiple domains (e.g., `http://d.joeyz.net`, `http://localhost:5000`)
 
 ### Audio Processing Patterns
 - **Resampling**: Custom linear interpolation in `VBCableBridge._resample()` - handles mismatched device sample rates
@@ -112,10 +115,16 @@ Build configuration in [ClubVoice.spec](../ClubVoice.spec):
 - Ducking behavior: Adjust `ducking_volume`/`ducking_threshold` in [websocket_handler.py](src/server/websocket_handler.py#L24-L30)
 
 ### Testing
-- [tests/test_audio.py](../tests/test_audio.py): AudioProcessor unit tests
-- [tests/test_websocket.py](../tests/test_websocket.py): Socket.IO mock tests
+- [test/test_audio.py](../test/test_audio.py): AudioProcessor unit tests
+- [test/test_websocket.py](../test/test_websocket.py): Socket.IO mock tests
 - [test_16ch.py](../test_16ch.py): 16-channel device testing script
 - Debug page: [static/debug.html](../static/debug.html) - additional logging and controls
+
+### Debugging Tools
+- [tools/volume_monitor.py](../tools/volume_monitor.py): Rich UI real-time volume monitor with waveform visualization (recommended)
+- [tools/simple_volume_monitor.py](../tools/simple_volume_monitor.py): Lightweight terminal-only volume monitor (no Rich dependency)
+- Use volume monitors to test VB-Cable signal flow, calibrate ducking thresholds, and verify device configuration
+- [tools/README.md](../tools/README.md): Detailed usage examples and troubleshooting scenarios
 
 ## Integration Points
 
@@ -123,6 +132,8 @@ Build configuration in [ClubVoice.spec](../ClubVoice.spec):
 - **sounddevice**: Direct numpy array I/O with VB-Cable devices, callback-based streaming
 - **PyInstaller**: Bundles Python + static files into single EXE, hidden imports critical for Flask-SocketIO/Rich
 - **MPV**: Named pipe integration for music ducking (volume reduction when voice active), see `config.mpv` settings
+- **VAD + MPV Ducking**: Voice activity in Clubdeck room triggers `VoiceActivityDetector` → `MPVController` reduces music volume to configured level
+- **Cleanup utilities**: [src/utils/cleanup.py](../src/utils/cleanup.py) - PyInstaller temp directory cleanup, project file cleanup, can be run standalone
 
 ## Important Notes
 
