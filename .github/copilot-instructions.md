@@ -13,13 +13,13 @@ Browser <--Socket.IO--> Python Server <--VB-Cable--> Clubdeck
 
 ### Key Components
 
-1. **Flask Server** ([src/server/app.py](src/server/app.py)) - HTTP + Socket.IO server hosting static files, `/status` endpoint for health checks
-2. **WebSocket Handler** ([src/server/websocket_handler.py](src/server/websocket_handler.py)) - Manages client connections, implements server-side audio ducking (reduces received volume when mic is active)
-3. **VB-Cable Bridge** ([src/audio/vb_cable_bridge.py](src/audio/vb_cable_bridge.py)) - Single input/output architecture receives Clubdeck+MPV pre-mixed audio and sends browser audio back
-4. **Device Manager** ([src/audio/device_manager.py](src/audio/device_manager.py)) - Interactive CLI for selecting VB-Cable devices with Rich UI, auto-detects VoiceMeeter/Hi-Fi Cable/VB-Cable devices
-5. **Audio Processor** ([src/audio/processor.py](src/audio/processor.py)) - Noise gate, high-pass filter (100Hz cutoff), numpy/base64 conversions
-6. **Bootstrap** ([src/bootstrap.py](src/bootstrap.py)) - Startup wizard with device selection and configuration summary
-7. **Web Client** ([static/js/client.js](static/js/client.js)) - Web Audio API (`VoiceClient` class) for mic capture, AudioBufferSourceNode for smooth playback with queuing
+1. **Flask Server** ([src/server/app.py](src/server/app.py)) - HTTP + Socket.IO server hosting static files, `/status` endpoint for health checks. Uses gevent async mode with ping_timeout=60, ping_interval=25 for stable WebSocket connections
+2. **WebSocket Handler** ([src/server/websocket_handler.py](src/server/websocket_handler.py)) - Manages client connections, implements server-side audio ducking (reduces received volume when mic is active). Registers Socket.IO event handlers using @socketio.on() decorator pattern
+3. **VB-Cable Bridge** ([src/audio/vb_cable_bridge.py](src/audio/vb_cable_bridge.py)) - Handles audio input from VB-Cable devices. Supports single-input mode or dual-input mixing mode. Routes audio through mixer thread to output queues. Integrates voice detection for MPV ducking
+4. **Device Manager** ([src/audio/device_manager.py](src/audio/device_manager.py)) - Interactive CLI for selecting VB-Cable devices with Rich UI. Scores devices: VoiceMeeter B2 (+100), Hi-Fi Cable (+70), VB-Cable 2ch (+100 bonus), 16ch devices (-100 penalty)
+5. **Audio Processor** ([src/audio/processor.py](src/audio/processor.py)) - Base64 ↔ numpy conversion, noise gate, high-pass filter (100Hz cutoff), resampling via linear interpolation
+6. **Bootstrap** ([src/bootstrap.py](src/bootstrap.py)) - Startup wizard with device selection and configuration summary. Returns AudioConfig with selected device IDs
+7. **Web Client** ([static/js/client.js](static/js/client.js)) - Web Audio API (`VoiceClient` class) for mic capture, AudioBufferSourceNode for smooth playback with queuing. Manages nextPlayTime for buffer scheduling
 8. **MPV Controller** ([src/audio/mpv_controller.py](src/audio/mpv_controller.py)) - Controls MPV music player via Windows Named Pipe (`\\.\pipe\mpv-pipe`), reduces volume during voice activity
 9. **Voice Detector** ([src/audio/voice_detector.py](src/audio/voice_detector.py)) - VAD (Voice Activity Detection) for triggering MPV ducking, configurable RMS threshold and timing parameters
 
