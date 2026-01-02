@@ -11,7 +11,7 @@ from rich.console import Console
 
 from .processor import AudioProcessor
 from .voice_detector import VoiceActivityDetector, VoiceDetectionConfig
-from .audio_ducker import AudioDucker
+from .mpv_controller import MPVController
 
 
 console = Console()
@@ -77,7 +77,7 @@ class VBCableBridge:
         
         self.ducking_enabled = config.audio.ducking_enabled
         
-        if self.ducking_enabled and mix_mode:
+        if self.ducking_enabled:
             # 语音检测器（监测 VB-Cable A / Clubdeck 房间语音）
             self.voice_detector = VoiceActivityDetector(
                 sample_rate=input_sample_rate,
@@ -88,28 +88,22 @@ class VBCableBridge:
                 )
             )
             
-            # 音频闪避器（控制 VB-Cable B / 音乐音量）
-            self.audio_ducker = AudioDucker(
-                sample_rate=input_sample_rate,
-                normal_gain=1.0,
-                ducked_gain=config.audio.ducking_gain,
-                transition_time=config.audio.ducking_transition_time
-            )
+            # MPV 控制器（通过 named pipe 控制 MPV 音乐音量）
+            self.mpv_controller = MPVController(config.mpv)
             
             console.print(f"\n{'='*60}")
             console.print(f"[bold cyan]🎵 音频闪避 (Audio Ducking) 已启用[/bold cyan]")
             console.print(f"{'='*60}")
             console.print(f"  检测源: VB-Cable A (Clubdeck 房间语音)")
-            console.print(f"  控制源: VB-Cable B (音乐播放)")
+            console.print(f"  控制目标: MPV 音乐播放器 (通过 Named Pipe)")
             console.print(f"  语音阈值: {config.audio.ducking_threshold}")
-            console.print(f"  正常音量: 100%")
-            console.print(f"  闪避音量: {int(config.audio.ducking_gain*100)}%")
+            console.print(f"  正常音量: {config.mpv.normal_volume}%")
+            console.print(f"  闪避音量: {config.mpv.ducking_volume}%")
+            console.print(f"  MPV Pipe: {config.mpv.pipe_path}")
             console.print(f"{'='*60}\n")
         else:
             self.voice_detector = None
-            self.audio_ducker = None
-            if not mix_mode and config.audio.ducking_enabled:
-                console.print("[dim yellow]⚠️  音频闪避需要启用混音模式 (mix_mode=true)[/dim yellow]")
+            self.mpv_controller = None
         
         # 调试计数器
         self._frame_count = 0
@@ -323,7 +317,7 @@ class VBCableBridge:
                 
                 # === 计算音量 ===
                 volume1 = self._calculate_volume(audio1.flatten())
-                volume2_pre = self._calculate_volume(audio2.flatten())  # 闪避前的音量
+                volume2 = self._calculate_volume(audio2.flatten())
                 
                 # === 语音活动检测（针对 Clubdeck 语音）===
                 has_voice = False
@@ -331,18 +325,9 @@ class VBCableBridge:
                     # 检测 Clubdeck 房间中是否有人说话
                     has_voice = self.voice_detector.detect(audio1.flatten())
                     
-                    # 根据检测结果控制音乐音量闪避
-                    if self.audio_ducker:
-                        self.audio_ducker.set_ducking(has_voice)
-                
-                # === 应用音频闪避到音乐 ===
-                volume2_post = volume2_pre  # 闪避后的音量
-                if self.ducking_enabled and self.audio_ducker:
-                    # 处理音乐音频，应用音量闪避
-                    audio2_flat = audio2.flatten()
-                    ducked_audio2 = self.audio_ducker.process(audio2_flat)
-                    audio2 = ducked_audio2.reshape(-1, self.browser_channels)
-                    volume2_post = self._calculate_volume(ducked_audio2)
+                    # 根据检测结果控制 MPV 音量
+                    if self.mpv_controller and self.mpv_controller.is_enabled():
+                        self.mpv_controller.set_ducking(has_voice)
                 
                 # 确保形状一致
                 if audio1.shape != audio2.shape:
@@ -351,7 +336,7 @@ class VBCableBridge:
                     audio1 = audio1.flatten()[:min_len].reshape(-1, self.browser_channels)
                     audio2 = audio2.flatten()[:min_len].reshape(-1, self.browser_channels)
                 
-                # 混音：简单相加（音频已被闪避器处理过）
+                # 混音：简单相加（MPV 音量由 MPV Controller 控制）
                 # 使用 int32 避免溢出，然后限制到 int16 范围
                 mixed_int32 = audio1.astype(np.int32) + audio2.astype(np.int32)
                 mixed = np.clip(mixed_int32, -32768, 32767).astype(np.int16)
@@ -366,13 +351,16 @@ class VBCableBridge:
                 self._frame_count += 1
                 if self._frame_count % 5 == 0:  # 每5帧刷新一次显示
                     bar1 = self._create_volume_bar(volume1, 20)
-                    bar2 = self._create_volume_bar(volume2_post, 20)
+                    bar2 = self._create_volume_bar(volume2, 20)
                     
                     # 语音状态指示
                     voice_icon = "🔊" if has_voice else "  "
                     
-                    # 单行显示（使用 \r 回到行首）- 包含设备 ID
-                    sys.stdout.write(f"\r音量 | Clubdeck [ID:{self.input_device_id}]: [{bar1}] {volume1:5.1f}% {voice_icon} | 音乐 [ID:{self.input_device_id_2}]: [{bar2}] {volume2_post:5.1f}%  ")
+                    # 获取 MPV 当前音量
+                    mpv_vol = self.mpv_controller.get_current_volume() if self.mpv_controller else 100
+                    
+                    # 单行显示（使用 \r 回到行首）- 包含设备 ID 和 MPV 音量
+                    sys.stdout.write(f"\r音量 | Clubdeck [ID:{self.input_device_id}]: [{bar1}] {volume1:5.1f}% {voice_icon} | 音乐 [ID:{self.input_device_id_2}]: [{bar2}] {volume2:5.1f}% | MPV: {mpv_vol:3d}%  ")
                     sys.stdout.flush()
                     
             except queue.Empty:
@@ -549,6 +537,10 @@ class VBCableBridge:
     def stop(self) -> None:
         """停止音频桥接"""
         self.running = False
+        
+        # 停止 MPV 控制器
+        if self.mpv_controller:
+            self.mpv_controller.stop()
         
         # 等待混音线程结束
         if self.mixer_thread and self.mixer_thread.is_alive():

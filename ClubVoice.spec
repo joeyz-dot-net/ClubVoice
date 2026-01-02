@@ -26,7 +26,7 @@ a = Analysis(
         'rich.panel', 
         'rich.prompt',
         'src.audio.voice_detector',
-        'src.audio.audio_ducker'
+        'src.audio.mpv_controller'
     ],
     hookspath=[],
     hooksconfig={},

@@ -68,11 +68,22 @@ class CorsConfig:
 
 
 @dataclass
+class MPVConfig:
+    """MPV 配置"""
+    enabled: bool = True
+    pipe_path: str = r'\\.\pipe\mpv-pipe'
+    normal_volume: int = 100
+    ducking_volume: int = 15
+    transition_time: float = 0.1
+
+
+@dataclass
 class AppConfig:
     """应用配置"""
     audio: AudioConfig = field(default_factory=AudioConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     cors: CorsConfig = field(default_factory=CorsConfig)
+    mpv: MPVConfig = field(default_factory=MPVConfig)
     
     def load_from_file(self, config_path: Optional[Path] = None) -> 'AppConfig':
         """从配置文件加载（仅加载服务器配置，音频参数由设备决定）"""
@@ -130,6 +141,13 @@ class AppConfig:
                         origin.strip() for origin in allowed_origins.split(',')
                         if origin.strip()
                     ]
+            
+            # 加载 MPV 配置
+            if 'mpv' in parser:
+                self.mpv.enabled = parser.getboolean('mpv', 'enabled', fallback=True)
+                self.mpv.pipe_path = parser.get('mpv', 'default_pipe', fallback=r'\\.\pipe\mpv-pipe')
+                self.mpv.normal_volume = parser.getint('mpv', 'normal_volume', fallback=100)
+                self.mpv.ducking_volume = parser.getint('mpv', 'ducking_volume', fallback=15)
             
             print(f"[✓] 已从 {config_path} 加载服务器配置")
             
