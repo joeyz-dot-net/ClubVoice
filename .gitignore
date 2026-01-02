@@ -46,3 +46,8 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+*.exe
+mpv.exe
+*.mp3
+
