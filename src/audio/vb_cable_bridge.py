@@ -363,8 +363,12 @@ class VBCableBridge:
                     # 获取 MPV 当前音量
                     mpv_vol = self.mpv_controller.get_current_volume() if self.mpv_controller else 100
                     
-                    # 单行显示（使用 \r 回到行首）- 包含设备 ID 和 MPV 音量
-                    sys.stdout.write(f"\r音量 | Clubdeck [ID:{self.input_device_id}]: [{bar1}] {volume1:5.1f}% {voice_icon} | 音乐 [ID:{self.input_device_id_2}]: [{bar2}] {volume2:5.1f}% | MPV: {mpv_vol:3d}%  ")
+                    # 获取客户端连接数
+                    from src.server.websocket_handler import get_connection_count
+                    clients = get_connection_count()
+                    
+                    # 单行显示（使用 \r 回到行首）- 简化显示，添加客户端数
+                    sys.stdout.write(f"\r音量 | CD: [{bar1}] {volume1:5.1f}% {voice_icon} | 音乐: [{bar2}] {volume2:5.1f}% | MPV: {mpv_vol:3d}% | 👤{clients}  ")
                     sys.stdout.flush()
                     
             except queue.Empty:

@@ -70,7 +70,7 @@ class WebSocketHandler:
                 client_id = request.sid
                 self.connected_clients.add(client_id)
                 _global_connection_count = len(self.connected_clients)
-                console.print(f"[green]Client connected: {client_id}[/green]")
+                # 连接日志已集成到音量显示行（👤客户端数）
                 # 发送连接确认和当前配置
                 emit('connected', {
                     'client_id': client_id,
@@ -96,8 +96,7 @@ class WebSocketHandler:
                 client_id = request.sid
                 self.connected_clients.discard(client_id)
                 _global_connection_count = len(self.connected_clients)
-                reason_msg = f" (reason: {reason})" if reason else ""
-                console.print(f"[yellow]Client disconnected: {client_id}{reason_msg}[/yellow]")
+                # 断开日志已集成到音量显示行（👤客户端数）
             except Exception as e:
                 console.print(f"[red]Disconnection handler error: {e}[/red]")
         
