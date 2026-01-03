@@ -42,7 +42,8 @@ class AudioConfig:
     input_channels_2: int = 2               # 输入设备2声道数
     
     # 音频闪避配置
-    ducking_enabled: bool = True
+    mpv_ducking_enabled: bool = True        # Clubdeck 房间语音降低 MPV 音乐音量
+    browser_ducking_enabled: bool = True    # 浏览器麦克风降低 Clubdeck 接收音量
     ducking_threshold: float = 150.0
     ducking_gain: float = 0.15
     ducking_min_duration: float = 0.1
@@ -132,7 +133,10 @@ class AppConfig:
                         pass
                 
                 # 加载音频闪避配置
-                self.audio.ducking_enabled = parser.getboolean('audio', 'ducking_enabled', fallback=True)
+                # 向后兼容：先尝试读取新的配置项，如果不存在则使用旧的 ducking_enabled
+                self.audio.mpv_ducking_enabled = parser.getboolean('audio', 'mpv_ducking_enabled', 
+                    fallback=parser.getboolean('audio', 'ducking_enabled', fallback=True))
+                self.audio.browser_ducking_enabled = parser.getboolean('audio', 'browser_ducking_enabled', fallback=True)
                 self.audio.ducking_threshold = parser.getfloat('audio', 'ducking_threshold', fallback=150.0)
                 self.audio.ducking_gain = parser.getfloat('audio', 'ducking_gain', fallback=0.15)
                 self.audio.ducking_min_duration = parser.getfloat('audio', 'ducking_min_duration', fallback=0.1)
@@ -196,7 +200,8 @@ class AppConfig:
         audio_section = {
             'duplex_mode': self.audio.duplex_mode,
             'mix_mode': str(self.audio.mix_mode).lower(),
-            'ducking_enabled': str(self.audio.ducking_enabled).lower(),
+            'mpv_ducking_enabled': str(self.audio.mpv_ducking_enabled).lower(),
+            'browser_ducking_enabled': str(self.audio.browser_ducking_enabled).lower(),
             'ducking_threshold': str(self.audio.ducking_threshold),
             'ducking_gain': str(self.audio.ducking_gain),
             'ducking_min_duration': str(self.audio.ducking_min_duration),

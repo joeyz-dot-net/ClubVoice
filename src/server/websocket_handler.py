@@ -43,9 +43,9 @@ class WebSocketHandler:
         self.forward_thread: Optional[threading.Thread] = None
         
         # 服务端 Ducking (闪避) - 麦克风说话时降低接收音量
-        self.ducking_enabled = True  # 是否启用闪避
-        self.ducking_volume = 0.15   # 说话时的最低音量 (15%)
-        self.ducking_threshold = 100  # 音量阈值 (int16 范围) - 降低以提高灵敏度
+        self.ducking_enabled = config.audio.browser_ducking_enabled  # 从配置读取
+        self.ducking_volume = config.audio.ducking_gain   # 说话时的最低音量
+        self.ducking_threshold = config.audio.ducking_threshold  # 音量阈值
         self.is_speaking = False      # 当前是否在说话
         self.speaking_decay = 0       # 说话状态衰减计数
         self.speaking_decay_max = 30  # 衰减计数上限 (~300ms)
@@ -214,6 +214,12 @@ class WebSocketHandler:
         # 启动 Clubdeck 音频转发线程
         self.forward_thread = threading.Thread(target=self._forward_clubdeck_audio, daemon=True)
         self.forward_thread.start()
+        
+        # 显示 Browser Ducking 配置
+        if self.ducking_enabled:
+            console.print(f"[cyan]* Browser Ducking: enabled (threshold={self.ducking_threshold}, volume={self.ducking_volume*100:.0f}%)[/cyan]")
+        else:
+            console.print("[dim]* Browser Ducking: disabled[/dim]")
         
         console.print("[green]* WebSocket handler started[/green]")
     

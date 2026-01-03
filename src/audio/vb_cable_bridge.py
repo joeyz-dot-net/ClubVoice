@@ -79,7 +79,7 @@ class VBCableBridge:
         # === 音频闪避功能 ===
         from ..config.settings import config
         
-        self.ducking_enabled = config.audio.ducking_enabled
+        self.ducking_enabled = config.audio.mpv_ducking_enabled
         
         if self.ducking_enabled:
             # 语音检测器（监测 VB-Cable A / Clubdeck 房间语音）
