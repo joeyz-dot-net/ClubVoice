@@ -84,17 +84,7 @@ def main():
             browser_output_channels=audio_config.browser_output_channels,
             browser_channels=audio_config.channels,
             chunk_size=audio_config.chunk_size,
-            mix_mode=audio_config.mix_mode,
-            # 向后兼容旧字段（如果新字段为None则使用旧字段）
-            input_device_id=audio_config.input_device_id,
-            input_device_id_2=audio_config.input_device_id_2,
-            output_device_id=audio_config.output_device_id,
-            input_sample_rate=audio_config.input_sample_rate,
-            input_sample_rate_2=audio_config.input_sample_rate_2,
-            output_sample_rate=audio_config.output_sample_rate,
-            input_channels=audio_config.input_channels,
-            input_channels_2=audio_config.input_channels_2,
-            output_channels=audio_config.output_channels
+            mix_mode=audio_config.mix_mode
         )
         
         # 创建 Flask 应用

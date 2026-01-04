@@ -48,9 +48,9 @@ class Bootstrap:
             AudioConfig: 音频配置对象
         """
         # 获取当前配置的设备ID
-        clubdeck_id = app_config.audio.clubdeck_input_device_id or app_config.audio.input_device_id_2
-        mpv_id = app_config.audio.mpv_input_device_id or app_config.audio.input_device_id
-        browser_out_id = app_config.audio.browser_output_device_id or app_config.audio.output_device_id
+        clubdeck_id = app_config.audio.clubdeck_input_device_id
+        mpv_id = app_config.audio.mpv_input_device_id
+        browser_out_id = app_config.audio.browser_output_device_id
         
         console.print("\n[bold cyan]========== 设备选择 ==========[/bold cyan]\n")
         
@@ -156,7 +156,7 @@ class Bootstrap:
         
         # 创建音频配置
         audio_config = AudioConfig(
-            # 新字段名（3-Cable）
+            # 3-Cable 设备配置
             mpv_input_device_id=mpv_id,
             clubdeck_input_device_id=clubdeck_id,
             browser_output_device_id=browser_out_id,
@@ -166,16 +166,6 @@ class Bootstrap:
             mpv_channels=min(mpv_device['max_input_channels'], 2),
             clubdeck_channels=min(clubdeck_device['max_input_channels'], 2) if clubdeck_device else 2,
             browser_output_channels=min(browser_out_device['max_output_channels'], 2),
-            # 旧字段名（向后兼容）
-            input_device_id=mpv_id,
-            input_device_id_2=clubdeck_id,
-            output_device_id=browser_out_id,
-            input_sample_rate=int(mpv_device['default_samplerate']),
-            input_sample_rate_2=int(clubdeck_device['default_samplerate']) if clubdeck_device else 48000,
-            output_sample_rate=int(browser_out_device['default_samplerate']),
-            input_channels=min(mpv_device['max_input_channels'], 2),
-            input_channels_2=min(clubdeck_device['max_input_channels'], 2) if clubdeck_device else 2,
-            output_channels=min(browser_out_device['max_output_channels'], 2),
             # 通用字段
             sample_rate=app_config.audio.sample_rate,
             channels=app_config.audio.channels,
@@ -203,33 +193,33 @@ class Bootstrap:
         mix_mode = config.audio.mix_mode
         
         # Check for default device ID
-        default_device_id = config.audio.input_device_id
+        default_device_id = config.audio.mpv_input_device_id
         if default_device_id is not None:
             console.print(f"[dim]Default device ID: {default_device_id}[/dim]\n")
         
         (input_id, input_sample_rate, input_channels) = self.device_manager.interactive_select(default_device_id)
         
         audio_config = AudioConfig(
-            input_device_id=input_id,
-            output_device_id=config.audio.output_device_id,
+            mpv_input_device_id=input_id,
+            browser_output_device_id=config.audio.browser_output_device_id,
             sample_rate=48000,  # 浏览器端使用 48kHz
-            input_sample_rate=input_sample_rate,
-            output_sample_rate=config.audio.output_sample_rate,
+            mpv_sample_rate=input_sample_rate,
+            browser_output_sample_rate=config.audio.browser_output_sample_rate,
             channels=2,  # 浏览器端始终立体声
-            input_channels=input_channels,
-            output_channels=config.audio.output_channels,
+            mpv_channels=input_channels,
+            browser_output_channels=config.audio.browser_output_channels,
             mix_mode=mix_mode,
-            input_device_id_2=config.audio.input_device_id_2,
+            clubdeck_input_device_id=config.audio.clubdeck_input_device_id,
             duplex_mode=config.audio.duplex_mode  # 保持原有的双工模式设置
         )
         
-        # 如果启用混音模式，获取第二个设备的参数
-        if mix_mode and config.audio.input_device_id_2 is not None:
-            device_2 = self.device_manager.get_device_info(config.audio.input_device_id_2)
+        # 如果启用混音模式，获取 Clubdeck 设备的参数
+        if mix_mode and config.audio.clubdeck_input_device_id is not None:
+            device_2 = self.device_manager.get_device_info(config.audio.clubdeck_input_device_id)
             if device_2:
-                audio_config.input_sample_rate_2 = device_2['sample_rate']
-                audio_config.input_channels_2 = device_2['input_channels'] if device_2['input_channels'] > 0 else 2
-                console.print(f"[dim]Secondary input: ID {config.audio.input_device_id_2}, {audio_config.input_sample_rate_2}Hz, {audio_config.input_channels_2}ch[/dim]\n")
+                audio_config.clubdeck_sample_rate = device_2['sample_rate']
+                audio_config.clubdeck_channels = device_2['input_channels'] if device_2['input_channels'] > 0 else 2
+                console.print(f"[dim]Secondary input: ID {config.audio.clubdeck_input_device_id}, {audio_config.clubdeck_sample_rate}Hz, {audio_config.clubdeck_channels}ch[/dim]\n")
         
         return audio_config
     
@@ -348,7 +338,7 @@ class Bootstrap:
                 # 使用配置文件中的设置（3-Cable架构）
                 console.print("\n[green]✓ 使用当前配置启动...[/green]\n")
                 return AudioConfig(
-                        # 新字段名（3-Cable）
+                        # 3-Cable 设备配置
                         mpv_input_device_id=mpv_id,
                         clubdeck_input_device_id=clubdeck_id,
                         browser_output_device_id=browser_out_id,
@@ -358,16 +348,6 @@ class Bootstrap:
                         mpv_channels=min(mpv_device['max_input_channels'], 2),
                         clubdeck_channels=min(sd.query_devices(clubdeck_id)['max_input_channels'], 2) if clubdeck_id else 2,
                         browser_output_channels=min(browser_out_device['max_output_channels'], 2),
-                        # 旧字段名（向后兼容）
-                        input_device_id=mpv_id,
-                        input_device_id_2=clubdeck_id,
-                        output_device_id=browser_out_id,
-                        input_sample_rate=int(mpv_device['default_samplerate']),
-                        input_sample_rate_2=int(sd.query_devices(clubdeck_id)['default_samplerate']) if clubdeck_id else 48000,
-                        output_sample_rate=int(browser_out_device['default_samplerate']),
-                        input_channels=min(mpv_device['max_input_channels'], 2),
-                        input_channels_2=min(sd.query_devices(clubdeck_id)['max_input_channels'], 2) if clubdeck_id else 2,
-                        output_channels=min(browser_out_device['max_output_channels'], 2),
                         # 通用字段
                         sample_rate=app_config.audio.sample_rate,
                         channels=app_config.audio.channels,
@@ -408,15 +388,8 @@ class Bootstrap:
             app_config.audio.clubdeck_input_device_id = self.selected_audio_config.clubdeck_input_device_id
             app_config.audio.browser_output_device_id = self.selected_audio_config.browser_output_device_id
             
-            # 同时更新旧字段（向后兼容）
-            app_config.audio.input_device_id = self.selected_audio_config.mpv_input_device_id
-            app_config.audio.input_device_id_2 = self.selected_audio_config.clubdeck_input_device_id
-            app_config.audio.output_device_id = self.selected_audio_config.browser_output_device_id
-            
             # 仅更新设备ID，保留其他配置和注释
             app_config.update_device_ids_in_file()
             console.print("[green]✓ 设备配置已保存到 config.ini[/green]")
-        except Exception as e:
-            console.print(f"[yellow]⚠️ 保存配置失败: {e}[/yellow]")
         except Exception as e:
             console.print(f"[yellow]⚠️ 保存配置失败: {e}[/yellow]")

@@ -39,17 +39,6 @@ class AudioConfig:
     browser_output_sample_rate: int = 48000
     browser_output_channels: int = 2
     
-    # === 旧字段名称 (向后兼容，已废弃) ===
-    input_device_id: Optional[int] = None   # 废弃: 使用 mpv_input_device_id
-    output_device_id: Optional[int] = None  # 废弃: 使用 browser_output_device_id
-    input_device_id_2: Optional[int] = None # 废弃: 使用 clubdeck_input_device_id
-    input_sample_rate: int = 48000          # 废弃: 使用 mpv_sample_rate
-    output_sample_rate: int = 48000         # 废弃: 使用 browser_output_sample_rate
-    input_channels: int = 2                 # 废弃: 使用 mpv_channels
-    output_channels: int = 2                # 废弃: 使用 browser_output_channels
-    input_sample_rate_2: int = 48000        # 废弃: 使用 clubdeck_sample_rate
-    input_channels_2: int = 2               # 废弃: 使用 clubdeck_channels
-    
     # === 通用配置 ===
     sample_rate: int = 48000                # Python 内部处理采样率
     channels: int = 2                       # Python 内部处理声道数
@@ -123,75 +112,46 @@ class AppConfig:
                 self.server.port = parser.getint('server', 'port', fallback=self.server.port)
                 self.server.debug = parser.getboolean('server', 'debug', fallback=self.server.debug)
             
-            # 加载音频通信模式和设备ID
+            # 加载音频通信模式
             if 'audio' in parser:
                 self.audio.duplex_mode = parser.get('audio', 'duplex_mode', fallback='full')
                 self.audio.mix_mode = parser.getboolean('audio', 'mix_mode', fallback=True)
-                
-                # === 读取新的 3-Cable 配置 ===
-                clubdeck_id = parser.get('audio', 'clubdeck_input_device_id', fallback=None)
+            
+            # 从 VAD Browser 节读取浏览器闪避配置
+            if 'VAD Browser' in parser:
+                self.audio.browser_ducking_enabled = parser.getboolean('VAD Browser', 'browser_ducking_enabled', fallback=False)
+                self.audio.ducking_threshold = parser.getfloat('VAD Browser', 'ducking_threshold', fallback=150.0)
+                self.audio.ducking_gain = parser.getfloat('VAD Browser', 'ducking_gain', fallback=0.15)
+            
+            # 从 VAD MPV 节读取 MPV 闪避配置
+            if 'VAD MPV' in parser:
+                self.audio.mpv_ducking_enabled = parser.getboolean('VAD MPV', 'mpv_ducking_enabled', fallback=True)
+                self.audio.ducking_min_duration = parser.getfloat('VAD MPV', 'ducking_min_duration', fallback=0.1)
+                self.audio.ducking_release_time = parser.getfloat('VAD MPV', 'ducking_release_time', fallback=0.5)
+                self.audio.ducking_transition_time = parser.getfloat('VAD MPV', 'ducking_transition_time', fallback=0.1)
+            
+            # 加载 VB Cable 设备配置 (3-Cable 架构)
+            if 'VB Cable' in parser:
+                clubdeck_id = parser.get('VB Cable', 'clubdeck_input_device_id', fallback=None)
                 if clubdeck_id is not None:
                     try:
                         self.audio.clubdeck_input_device_id = int(clubdeck_id)
                     except ValueError:
                         pass
                 
-                mpv_id = parser.get('audio', 'mpv_input_device_id', fallback=None)
+                mpv_id = parser.get('VB Cable', 'mpv_input_device_id', fallback=None)
                 if mpv_id is not None:
                     try:
                         self.audio.mpv_input_device_id = int(mpv_id)
                     except ValueError:
                         pass
                 
-                browser_out_id = parser.get('audio', 'browser_output_device_id', fallback=None)
+                browser_out_id = parser.get('VB Cable', 'browser_output_device_id', fallback=None)
                 if browser_out_id is not None:
                     try:
                         self.audio.browser_output_device_id = int(browser_out_id)
                     except ValueError:
                         pass
-                
-                # === 向后兼容：读取旧的 2-Cable 配置并自动迁移 ===
-                # 如果新配置不存在，尝试从旧配置迁移
-                if self.audio.clubdeck_input_device_id is None:
-                    input_device_id_2 = parser.get('audio', 'input_device_id_2', fallback=None)
-                    if input_device_id_2 is not None:
-                        try:
-                            self.audio.clubdeck_input_device_id = int(input_device_id_2)
-                            self.audio.input_device_id_2 = int(input_device_id_2)  # 保持兼容
-                            print(f"[迁移] input_device_id_2 ({input_device_id_2}) → clubdeck_input_device_id")
-                        except ValueError:
-                            pass
-                
-                if self.audio.mpv_input_device_id is None:
-                    input_device_id = parser.get('audio', 'input_device_id', fallback=None)
-                    if input_device_id is not None:
-                        try:
-                            self.audio.mpv_input_device_id = int(input_device_id)
-                            self.audio.input_device_id = int(input_device_id)  # 保持兼容
-                            print(f"[迁移] input_device_id ({input_device_id}) → mpv_input_device_id")
-                        except ValueError:
-                            pass
-                
-                if self.audio.browser_output_device_id is None:
-                    output_device_id = parser.get('audio', 'output_device_id', fallback=None)
-                    if output_device_id is not None:
-                        try:
-                            self.audio.browser_output_device_id = int(output_device_id)
-                            self.audio.output_device_id = int(output_device_id)  # 保持兼容
-                            print(f"[迁移] output_device_id ({output_device_id}) → browser_output_device_id")
-                        except ValueError:
-                            pass
-                
-                # 加载音频闪避配置
-                # 向后兼容：先尝试读取新的配置项，如果不存在则使用旧的 ducking_enabled
-                self.audio.mpv_ducking_enabled = parser.getboolean('audio', 'mpv_ducking_enabled', 
-                    fallback=parser.getboolean('audio', 'ducking_enabled', fallback=True))
-                self.audio.browser_ducking_enabled = parser.getboolean('audio', 'browser_ducking_enabled', fallback=True)
-                self.audio.ducking_threshold = parser.getfloat('audio', 'ducking_threshold', fallback=150.0)
-                self.audio.ducking_gain = parser.getfloat('audio', 'ducking_gain', fallback=0.15)
-                self.audio.ducking_min_duration = parser.getfloat('audio', 'ducking_min_duration', fallback=0.1)
-                self.audio.ducking_release_time = parser.getfloat('audio', 'ducking_release_time', fallback=0.5)
-                self.audio.ducking_transition_time = parser.getfloat('audio', 'ducking_transition_time', fallback=0.1)
             
             # 加载 CORS 配置
             if 'cors' in parser:
@@ -208,8 +168,11 @@ class AppConfig:
             if 'mpv' in parser:
                 self.mpv.enabled = parser.getboolean('mpv', 'enabled', fallback=True)
                 self.mpv.pipe_path = parser.get('mpv', 'default_pipe', fallback=r'\\.\pipe\mpv-pipe')
-                self.mpv.normal_volume = parser.getint('mpv', 'normal_volume', fallback=100)
-                self.mpv.ducking_volume = parser.getint('mpv', 'ducking_volume', fallback=15)
+            
+            # 从 VAD MPV 节读取 ducking 音量配置
+            if 'VAD MPV' in parser:
+                self.mpv.normal_volume = parser.getint('VAD MPV', 'normal_volume', fallback=100)
+                self.mpv.ducking_volume = parser.getint('VAD MPV', 'ducking_volume', fallback=15)
             
             print(f"[OK] Config loaded from {config_path}")
             
@@ -219,18 +182,6 @@ class AppConfig:
             print(f"[ERROR] Failed to load config: {e}")
         
         return self
-    
-    def update_audio_from_device(self, sample_rate: int, channels: int, 
-                                    input_device_id: int = None, 
-                                    output_device_id: int = None) -> None:
-        """根据设备参数更新音频配置"""
-        self.audio.sample_rate = sample_rate
-        self.audio.channels = channels
-        if input_device_id is not None:
-            self.audio.input_device_id = input_device_id
-        if output_device_id is not None:
-            self.audio.output_device_id = output_device_id
-        print(f"[✓] 音频参数已更新: {sample_rate}Hz, {channels}ch")
     
     def save_to_file(self, config_path: Optional[Path] = None) -> None:
         """保存配置到文件（仅保存服务器配置）"""
@@ -259,21 +210,13 @@ class AppConfig:
             'ducking_transition_time': str(self.audio.ducking_transition_time)
         }
         
-        # 保存新的 3-Cable 配置字段（优先）
+        # 保存 3-Cable 设备配置
         if self.audio.clubdeck_input_device_id is not None:
             audio_section['clubdeck_input_device_id'] = str(self.audio.clubdeck_input_device_id)
         if self.audio.mpv_input_device_id is not None:
             audio_section['mpv_input_device_id'] = str(self.audio.mpv_input_device_id)
         if self.audio.browser_output_device_id is not None:
             audio_section['browser_output_device_id'] = str(self.audio.browser_output_device_id)
-        
-        # 向后兼容：同时保存旧字段名（如果新字段不存在则使用旧字段）
-        if self.audio.input_device_id is not None:
-            audio_section['input_device_id'] = str(self.audio.input_device_id)
-        if self.audio.output_device_id is not None:
-            audio_section['output_device_id'] = str(self.audio.output_device_id)
-        if self.audio.input_device_id_2 is not None:
-            audio_section['input_device_id_2'] = str(self.audio.input_device_id_2)
         
         parser['audio'] = audio_section
         
@@ -350,9 +293,6 @@ class AppConfig:
                 'clubdeck_input_device_id': self.audio.clubdeck_input_device_id,
                 'mpv_input_device_id': self.audio.mpv_input_device_id,
                 'browser_output_device_id': self.audio.browser_output_device_id,
-                'input_device_id': self.audio.input_device_id,
-                'output_device_id': self.audio.output_device_id,
-                'input_device_id_2': self.audio.input_device_id_2,
             }
             
             # 逐个替换设备ID

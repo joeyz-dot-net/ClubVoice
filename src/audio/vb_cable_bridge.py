@@ -37,17 +37,7 @@ class VBCableBridge:
         clubdeck_input_device_id: Optional[int] = None,  # CABLE-C Output: Clubdeck房间输入
         clubdeck_sample_rate: Optional[int] = None,      # Clubdeck设备采样率
         clubdeck_channels: Optional[int] = None,         # Clubdeck设备声道数
-        mix_mode: bool = True,                            # 3-Cable架构默认开启混音
-        # 向后兼容（已废弃）
-        input_device_id: Optional[int] = None,
-        output_device_id: Optional[int] = None,
-        input_sample_rate: Optional[int] = None,
-        input_channels: Optional[int] = None,
-        output_sample_rate: Optional[int] = None,
-        output_channels: Optional[int] = None,
-        input_device_id_2: Optional[int] = None,
-        input_sample_rate_2: Optional[int] = None,
-        input_channels_2: Optional[int] = None
+        mix_mode: bool = True                            # 3-Cable架构默认开启混音
     ):
         """
         初始化VB-Cable桥接器
@@ -59,32 +49,21 @@ class VBCableBridge:
         
         Python混音: CABLE-B (MPV) + CABLE-C (Clubdeck) → 浏览器
         """
-        # === 新字段（3-Cable架构）===
-        self.mpv_input_device_id = mpv_input_device_id or input_device_id
-        self.clubdeck_input_device_id = clubdeck_input_device_id or input_device_id_2
-        self.browser_output_device_id = browser_output_device_id or output_device_id
+        # === 3-Cable架构设备配置 ===
+        self.mpv_input_device_id = mpv_input_device_id
+        self.clubdeck_input_device_id = clubdeck_input_device_id
+        self.browser_output_device_id = browser_output_device_id
         
         self.browser_sample_rate = browser_sample_rate
-        self.mpv_sample_rate = mpv_sample_rate or input_sample_rate or 48000
-        self.clubdeck_sample_rate = clubdeck_sample_rate or input_sample_rate_2 or 48000
-        self.browser_output_sample_rate = browser_output_sample_rate or output_sample_rate or browser_sample_rate
+        self.mpv_sample_rate = mpv_sample_rate or 48000
+        self.clubdeck_sample_rate = clubdeck_sample_rate or 48000
+        self.browser_output_sample_rate = browser_output_sample_rate or browser_sample_rate
         
-        self.mpv_channels = mpv_channels or input_channels or 2
-        self.clubdeck_channels = clubdeck_channels or input_channels_2 or 2
-        self.browser_output_channels = browser_output_channels or output_channels or browser_channels
+        self.mpv_channels = mpv_channels or 2
+        self.clubdeck_channels = clubdeck_channels or 2
+        self.browser_output_channels = browser_output_channels or browser_channels
         self.browser_channels = browser_channels
         self.chunk_size = chunk_size
-        
-        # === 向后兼容字段（已废弃，保留用于迁移）===
-        self.input_device_id = self.mpv_input_device_id
-        self.input_device_id_2 = self.clubdeck_input_device_id
-        self.output_device_id = self.browser_output_device_id
-        self.input_sample_rate = self.mpv_sample_rate
-        self.input_sample_rate_2 = self.clubdeck_sample_rate
-        self.output_sample_rate = self.browser_output_sample_rate
-        self.input_channels = self.mpv_channels
-        self.input_channels_2 = self.clubdeck_channels
-        self.output_channels = self.browser_output_channels
         
         # 混音模式配置（3-Cable架构默认开启）
         self.mix_mode = mix_mode
@@ -338,13 +317,13 @@ class VBCableBridge:
         audio_data = indata.copy().astype(np.int16)
         
         # 1. 先转换为立体声（浏览器端格式）
-        stereo_data = self._convert_to_stereo(audio_data, self.input_channels)
+        stereo_data = self._convert_to_stereo(audio_data, self.mpv_channels)
         
         # 2. 如果采样率不同，进行重采样
-        if self.input_sample_rate != self.browser_sample_rate:
+        if self.mpv_sample_rate != self.browser_sample_rate:
             stereo_data = self._resample_stereo(
                 stereo_data.flatten(), 
-                self.input_sample_rate, 
+                self.mpv_sample_rate, 
                 self.browser_sample_rate,
                 self.browser_channels
             )
@@ -371,13 +350,13 @@ class VBCableBridge:
         audio_data = indata.copy().astype(np.int16)
         
         # 1. 先转换为立体声（浏览器端格式）
-        stereo_data = self._convert_to_stereo(audio_data, self.input_channels_2)
+        stereo_data = self._convert_to_stereo(audio_data, self.clubdeck_channels)
         
         # 2. 如果采样率不同，进行重采样
-        if self.input_sample_rate_2 != self.browser_sample_rate:
+        if self.clubdeck_sample_rate != self.browser_sample_rate:
             stereo_data = self._resample_stereo(
                 stereo_data.flatten(), 
-                self.input_sample_rate_2, 
+                self.clubdeck_sample_rate, 
                 self.browser_sample_rate,
                 self.browser_channels
             )
@@ -524,7 +503,7 @@ class VBCableBridge:
             console.print(f"[yellow]输出状态: {status}[/yellow]")
         
         # 计算需要的输出设备采样数
-        ratio = self.browser_sample_rate / self.output_sample_rate
+        ratio = self.browser_sample_rate / self.browser_output_sample_rate
         needed_browser_frames = int(frames * ratio)
         needed_stereo_samples = needed_browser_frames * self.browser_channels
         
@@ -566,20 +545,20 @@ class VBCableBridge:
             stereo_data = stereo_data[:needed_stereo_samples]
         
         # 4. 重采样和声道转换
-        if self.browser_sample_rate != self.output_sample_rate:
+        if self.browser_sample_rate != self.browser_output_sample_rate:
             stereo_data = self._resample_stereo(
                 stereo_data, 
                 self.browser_sample_rate, 
-                self.output_sample_rate,
+                self.browser_output_sample_rate,
                 self.browser_channels
             )
         
-        output_data = self._convert_from_stereo(stereo_data.flatten(), self.output_channels)
+        output_data = self._convert_from_stereo(stereo_data.flatten(), self.browser_output_channels)
         
         # 5. 输出
-        expected_samples = frames * self.output_channels
+        expected_samples = frames * self.browser_output_channels
         if len(output_data.flatten()) >= expected_samples:
-            outdata[:] = output_data.flatten()[:expected_samples].reshape(frames, self.output_channels)
+            outdata[:] = output_data.flatten()[:expected_samples].reshape(frames, self.browser_output_channels)
         else:
             outdata[:len(output_data)] = output_data
             outdata[len(output_data):] = 0
@@ -594,43 +573,43 @@ class VBCableBridge:
         # 验证设备是否存在
         try:
             devices = sd.query_devices()
-            if self.input_device_id < 0 or self.input_device_id >= len(devices):
-                raise ValueError(f"输入设备 ID {self.input_device_id} 无效（总设备数: {len(devices)}）")
+            if self.mpv_input_device_id < 0 or self.mpv_input_device_id >= len(devices):
+                raise ValueError(f"MPV输入设备 ID {self.mpv_input_device_id} 无效（总设备数: {len(devices)}）")
             
             # 只在有输出设备时验证输出设备
-            if self.output_device_id is not None:
-                if self.output_device_id < 0 or self.output_device_id >= len(devices):
-                    raise ValueError(f"输出设备 ID {self.output_device_id} 无效（总设备数: {len(devices)}）")
+            if self.browser_output_device_id is not None:
+                if self.browser_output_device_id < 0 or self.browser_output_device_id >= len(devices):
+                    raise ValueError(f"浏览器输出设备 ID {self.browser_output_device_id} 无效（总设备数: {len(devices)}）")
         except Exception as e:
             console.print(f"[red]Device validation failed: {e}[/red]")
             self.running = False
             raise
         
         try:
-            # 启动输入流1
+            # 启动输入流1 (MPV音乐)
             self.input_stream = sd.InputStream(
-                device=self.input_device_id,
-                samplerate=self.input_sample_rate,
-                channels=self.input_channels,
+                device=self.mpv_input_device_id,
+                samplerate=self.mpv_sample_rate,
+                channels=self.mpv_channels,
                 dtype='int16',
                 blocksize=self.chunk_size,
                 callback=self._input_callback
             )
             self.input_stream.start()
-            console.print(f"[dim]* Input stream 1 started: device {self.input_device_id}, {self.input_sample_rate}Hz, {self.input_channels}ch[/dim]")
+            console.print(f"[dim]* MPV input stream started: device {self.mpv_input_device_id}, {self.mpv_sample_rate}Hz, {self.mpv_channels}ch[/dim]")
             
-            # 如果启用混音模式，启动第二个输入流
-            if self.mix_mode and self.input_device_id_2 is not None:
+            # 如果启用混音模式，启动第二个输入流 (Clubdeck房间)
+            if self.mix_mode and self.clubdeck_input_device_id is not None:
                 self.input_stream_2 = sd.InputStream(
-                    device=self.input_device_id_2,
-                    samplerate=self.input_sample_rate_2,
-                    channels=self.input_channels_2,
+                    device=self.clubdeck_input_device_id,
+                    samplerate=self.clubdeck_sample_rate,
+                    channels=self.clubdeck_channels,
                     dtype='int16',
                     blocksize=self.chunk_size,
                     callback=self._input_callback_2
                 )
                 self.input_stream_2.start()
-                console.print(f"[dim]* Input stream 2 started: device {self.input_device_id_2}, {self.input_sample_rate_2}Hz, {self.input_channels_2}ch[/dim]")
+                console.print(f"[dim]* Clubdeck input stream started: device {self.clubdeck_input_device_id}, {self.clubdeck_sample_rate}Hz, {self.clubdeck_channels}ch[/dim]")
                 
                 # 启动混音线程（Clubdeck + MPV → 浏览器）
                 self.mixer_thread = threading.Thread(target=self._mixer_worker, daemon=True)
@@ -640,17 +619,17 @@ class VBCableBridge:
                 # 不再需要独立的 clubdeck_output_thread
             
             # 只在双向模式时启动输出流
-            if self.output_device_id is not None:
+            if self.browser_output_device_id is not None:
                 self.output_stream = sd.OutputStream(
-                    device=self.output_device_id,
-                    samplerate=self.output_sample_rate,
-                    channels=self.output_channels,
+                    device=self.browser_output_device_id,
+                    samplerate=self.browser_output_sample_rate,
+                    channels=self.browser_output_channels,
                     dtype='int16',
                     blocksize=self.chunk_size,
                     callback=self._output_callback
                 )
                 self.output_stream.start()
-                console.print(f"[green]* Output stream started: device {self.output_device_id}, {self.output_sample_rate}Hz, {self.output_channels}ch[/green]")
+                console.print(f"[green]* Browser output stream started: device {self.browser_output_device_id}, {self.browser_output_sample_rate}Hz, {self.browser_output_channels}ch[/green]")
             else:
                 console.print(f"[dim]! Half-duplex mode: output stream not started[/dim]")
             
