@@ -19,6 +19,7 @@ console = Console(no_color=True, force_terminal=False, legacy_windows=True)
 # 全局变量，用于清理
 bridge = None
 ws_handler = None
+bootstrap = None  # 保存 bootstrap 实例用于退出时保存配置
 _exiting = False
 
 
@@ -32,6 +33,13 @@ def signal_handler(sig, frame):
     _exiting = True
     
     console.print("\n[yellow]正在关闭服务...[/yellow]")
+    
+    # 保存设备配置
+    if bootstrap:
+        try:
+            bootstrap.save_config_on_exit()
+        except Exception:
+            pass
     
     # 停止音频处理
     if ws_handler:
@@ -51,7 +59,7 @@ def signal_handler(sig, frame):
 
 def main():
     """主函数"""
-    global bridge, ws_handler
+    global bridge, ws_handler, bootstrap
     
     # 注册信号处理
     signal.signal(signal.SIGINT, signal_handler)
@@ -132,6 +140,12 @@ def main():
         # cleanup_on_exit(verbose=False)
         raise
     finally:
+        # 保存设备配置（如果有修改）
+        if bootstrap:
+            try:
+                bootstrap.save_config_on_exit()
+            except:
+                pass
         # 确保无论如何都清理资源
         if ws_handler:
             try:

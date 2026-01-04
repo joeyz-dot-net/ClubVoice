@@ -480,13 +480,24 @@ class VBCableBridge:
                     # 获取 MPV 当前音量
                     mpv_vol = self.mpv_controller.get_current_volume() if self.mpv_controller else 100
                     
-                    # 获取客户端连接数
-                    from src.server.websocket_handler import get_connection_count
+                    # 获取客户端连接数、麦克风音量和 ducking 状态
+                    from src.server.websocket_handler import get_connection_count, get_mic_volume, get_ducking_info
                     clients = get_connection_count()
+                    mic_vol = get_mic_volume()
+                    is_ducking, ducking_amp = get_ducking_info()
                     
-                    # 单行显示（使用 \r 回到行首）- 人数、MPV 在前，方便监控
-                    # bar1/volume1=MPV音乐, bar2/volume2=Clubdeck房间
-                    sys.stdout.write(f"\r👤{clients} | MPV: {mpv_vol:3d}% | 音乐: [{bar1}] {volume1:5.1f}% | CD: [{bar2}] {volume2:5.1f}% {voice_icon}  ")
+                    # 麦克风音量条 (缩短显示宽度)
+                    mic_bar = self._create_volume_bar(mic_vol, 10)
+                    mic_display = f"🎤[{mic_bar}]{mic_vol:4.0f}%" if clients > 0 else ""
+                    
+                    # Ducking 状态显示
+                    ducking_display = f"🔇{ducking_amp:.0f}" if is_ducking else ""
+                    
+                    # 单行显示（使用 \r 回到行首）- 精简版避免截断
+                    # bar1=MPV音乐, bar2=Clubdeck房间 (缩短 bar 宽度)
+                    bar1_short = self._create_volume_bar(volume1, 10)
+                    bar2_short = self._create_volume_bar(volume2, 10)
+                    sys.stdout.write(f"\r👤{clients}|MPV{mpv_vol:3d}%|音乐[{bar1_short}]{volume1:4.0f}%|CD[{bar2_short}]{volume2:4.0f}%{voice_icon}{mic_display}{ducking_display}    ")
                     sys.stdout.flush()
                     
             except queue.Empty:

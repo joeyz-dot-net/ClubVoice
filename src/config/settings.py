@@ -327,6 +327,48 @@ class AppConfig:
         except Exception:
             # 忽略注释添加失败
             pass
+    
+    def update_device_ids_in_file(self, config_path: Optional[Path] = None) -> None:
+        """
+        仅更新配置文件中的设备ID，保留其他内容和注释
+        """
+        import re
+        
+        if config_path is None:
+            config_path = get_config_path()
+        
+        if not config_path.exists():
+            print(f"[ERROR] Config file not found: {config_path}")
+            return
+        
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 定义要更新的设备ID字段及其新值
+            updates = {
+                'clubdeck_input_device_id': self.audio.clubdeck_input_device_id,
+                'mpv_input_device_id': self.audio.mpv_input_device_id,
+                'browser_output_device_id': self.audio.browser_output_device_id,
+                'input_device_id': self.audio.input_device_id,
+                'output_device_id': self.audio.output_device_id,
+                'input_device_id_2': self.audio.input_device_id_2,
+            }
+            
+            # 逐个替换设备ID
+            for key, value in updates.items():
+                if value is not None:
+                    # 匹配 key = 任意数字 (可能有空格)
+                    pattern = rf'^(\s*{key}\s*=\s*)\d+(.*)$'
+                    replacement = rf'\g<1>{value}\g<2>'
+                    content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+            
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            print(f"[OK] Device IDs updated in {config_path}")
+        except Exception as e:
+            print(f"[ERROR] Failed to update device IDs: {e}")
 
 
 # 全局配置实例 - 自动加载配置文件

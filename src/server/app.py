@@ -29,14 +29,18 @@ app.config['WERKZEUG_RUN_MAIN'] = False
 # 加载配置
 from ..config.settings import config
 
+
 # 添加 CORS 支持 - 从配置文件读取
 if config.cors.enabled:
     CORS(app, origins=config.cors.allowed_origins)
+    cors_origins_for_socketio = config.cors.allowed_origins
+else:
+    cors_origins_for_socketio = "*"
 
 # Create SocketIO - use gevent mode with socket reuse options
 socketio = SocketIO(
     app,
-    cors_allowed_origins=config.cors.allowed_origins if config.cors.enabled else "*",
+    cors_allowed_origins=cors_origins_for_socketio,
     async_mode='gevent',
     ping_timeout=60,
     ping_interval=25,

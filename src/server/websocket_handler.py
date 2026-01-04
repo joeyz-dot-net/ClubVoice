@@ -19,12 +19,26 @@ console = Console()
 
 # 全局连接数变量（用于 /status 端点）
 _global_connection_count = 0
+_global_mic_volume = 0.0  # 全局麦克风音量（用于状态行显示）
+_global_ducking_info = (False, 0)  # (is_ducking, amplitude) 用于状态行显示
 
 
 def get_connection_count() -> int:
     """获取当前连接数"""
     global _global_connection_count
     return _global_connection_count
+
+
+def get_mic_volume() -> float:
+    """获取当前麦克风音量"""
+    global _global_mic_volume
+    return _global_mic_volume
+
+
+def get_ducking_info() -> tuple:
+    """获取 ducking 状态 (is_ducking, amplitude)"""
+    global _global_ducking_info
+    return _global_ducking_info
 
 
 class WebSocketHandler:
@@ -104,6 +118,8 @@ class WebSocketHandler:
         @self.socketio.on('audio_data')
         def handle_audio_data(data):
             """接收浏览器音频并转发到 Clubdeck"""
+            global _global_mic_volume, _global_ducking_info
+            
             # 半双工模式下忽略浏览器麦克风
             if config.audio.duplex_mode == 'half':
                 console.print(f"[dim red]Half-duplex mode, ignoring browser audio[/dim red]")
@@ -120,26 +136,17 @@ class WebSocketHandler:
                     rms = np.sqrt(np.mean((audio_array.astype(np.float32) / 32768.0) ** 2))
                     mic_volume = min(100.0, rms * 100.0 * 10.0)
                     
-                    # 实时音量监控显示（每10帧显示一次）
-                    if not hasattr(self, '_frame_counter'):
-                        self._frame_counter = 0
-                    self._frame_counter += 1
-                    
-                    if self._frame_counter % 10 == 0:
-                        # 创建音量条
-                        bar_width = 20
-                        filled = int(mic_volume / 100.0 * bar_width)
-                        bar = '█' * filled + '░' * (bar_width - filled)
-                        console.print(f"[dim cyan]🎤 Mic: [{bar}] {mic_volume:5.1f}%[/dim cyan]", end='\r')
+                    # 更新全局麦克风音量（供状态行显示）
+                    _global_mic_volume = mic_volume
                     
                     # 检测是否在说话（用于 ducking）
                     if self.ducking_enabled:
                         with self._ducking_lock:
                             if max_amplitude > self.ducking_threshold:
-                                if not self.is_speaking:
-                                    console.print(f"[yellow]🔇 Ducking ON (amp={max_amplitude:.0f})[/yellow]")
                                 self.is_speaking = True
                                 self.speaking_decay = self.speaking_decay_max
+                                # 更新全局 ducking 状态（供状态行显示）
+                                _global_ducking_info = (True, max_amplitude)
                     
                     # 音频处理（降噪、滤波）
                     audio_array = self.processor.process_audio(audio_array)
@@ -175,12 +182,15 @@ class WebSocketHandler:
                     # 应用 Ducking (闪避) - 说话时降低音量（平滑过渡）
                     if self.ducking_enabled:
                         with self._ducking_lock:
+                            global _global_ducking_info
                             if self.speaking_decay > 0:
                                 self.speaking_decay -= 1
                                 self.target_volume = self.ducking_volume
                             else:
                                 self.is_speaking = False
                                 self.target_volume = 1.0
+                                # 清除 ducking 状态
+                                _global_ducking_info = (False, 0)
                             
                             # 平滑过渡到目标音量
                             if self.current_volume < self.target_volume:
