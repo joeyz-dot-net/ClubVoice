@@ -99,6 +99,18 @@ class VBCableBridge:
         self.mpv_for_clubdeck_queue: queue.Queue = queue.Queue(maxsize=200)  # MPV音乐副本 → Clubdeck
         self.browser_audio_cache: queue.Queue = queue.Queue(maxsize=200)  # 浏览器麦克风缓存 → clubdeck混音线程
         
+        # === MPV 环形缓冲区（0.5秒缓冲，用于 Clubdeck 混音）===
+        # 48000Hz * 0.5s * 2ch = 48000 samples
+        self.mpv_ring_buffer_size = int(browser_sample_rate * 0.5 * 2)
+        self.mpv_ring_buffer = np.zeros(self.mpv_ring_buffer_size, dtype=np.int16)
+        self.mpv_ring_write_pos = 0
+        self.mpv_ring_read_pos = 0
+        self.mpv_ring_lock = threading.Lock()
+        
+        # === 浏览器音频缓冲区（平滑处理大包）===
+        self.browser_audio_buffer = np.array([], dtype=np.int16)
+        self.browser_buffer_lock = threading.Lock()
+        
         # 状态
         self.running = False
         self.input_stream: Optional[sd.InputStream] = None          # MPV音乐流
@@ -238,6 +250,66 @@ class VBCableBridge:
             reshaped = audio_data.reshape(frames, source_channels)
             return reshaped[:, :2].copy()
     
+    def _write_to_mpv_ring_buffer(self, data: np.ndarray) -> None:
+        """写入 MPV 环形缓冲区"""
+        with self.mpv_ring_lock:
+            data_len = len(data)
+            buf_size = self.mpv_ring_buffer_size
+            
+            # 写入位置
+            write_pos = self.mpv_ring_write_pos
+            
+            if write_pos + data_len <= buf_size:
+                # 不需要回绕
+                self.mpv_ring_buffer[write_pos:write_pos + data_len] = data
+            else:
+                # 需要回绕
+                first_part = buf_size - write_pos
+                self.mpv_ring_buffer[write_pos:] = data[:first_part]
+                self.mpv_ring_buffer[:data_len - first_part] = data[first_part:]
+            
+            self.mpv_ring_write_pos = (write_pos + data_len) % buf_size
+    
+    def _read_from_mpv_ring_buffer(self, length: int) -> np.ndarray:
+        """从 MPV 环形缓冲区读取指定长度的数据"""
+        with self.mpv_ring_lock:
+            buf_size = self.mpv_ring_buffer_size
+            read_pos = self.mpv_ring_read_pos
+            
+            # 计算可用数据量
+            write_pos = self.mpv_ring_write_pos
+            if write_pos >= read_pos:
+                available = write_pos - read_pos
+            else:
+                available = buf_size - read_pos + write_pos
+            
+            # 如果请求的长度超过可用数据，返回静音+可用数据
+            if available < length:
+                # 返回可用数据 + 静音填充
+                result = np.zeros(length, dtype=np.int16)
+                if available > 0:
+                    if read_pos + available <= buf_size:
+                        result[:available] = self.mpv_ring_buffer[read_pos:read_pos + available]
+                    else:
+                        first_part = buf_size - read_pos
+                        result[:first_part] = self.mpv_ring_buffer[read_pos:]
+                        result[first_part:available] = self.mpv_ring_buffer[:available - first_part]
+                    self.mpv_ring_read_pos = (read_pos + available) % buf_size
+                return result
+            
+            # 正常读取
+            if read_pos + length <= buf_size:
+                result = self.mpv_ring_buffer[read_pos:read_pos + length].copy()
+            else:
+                first_part = buf_size - read_pos
+                result = np.concatenate([
+                    self.mpv_ring_buffer[read_pos:],
+                    self.mpv_ring_buffer[:length - first_part]
+                ])
+            
+            self.mpv_ring_read_pos = (read_pos + length) % buf_size
+            return result
+    
     def _convert_from_stereo(self, audio_data: np.ndarray, target_channels: int) -> np.ndarray:
         """将立体声转换为目标声道数"""
         if target_channels == self.browser_channels:
@@ -282,8 +354,8 @@ class VBCableBridge:
             if self.mix_mode:
                 # 副本1：给mixer用（Clubdeck + MPV → 浏览器）
                 self.input_queue.put_nowait(stereo_data)
-                # 副本2：给send_to_clubdeck用（浏览器麦克风 + MPV → Clubdeck）
-                self.mpv_for_clubdeck_queue.put_nowait(stereo_data.copy())
+                # 副本2：写入环形缓冲区（给 output_callback 混音用）
+                self._write_to_mpv_ring_buffer(stereo_data.flatten())
             else:
                 # 单输入模式：直接放入混音队列
                 self.mixed_queue.put_nowait(stereo_data)
@@ -436,7 +508,7 @@ class VBCableBridge:
             console.print(f"[yellow]MPV 输入状态: {status}[/yellow]")
         
     def _output_callback(self, outdata: np.ndarray, frames: int, time_info, status):
-        """输出流回调 - 发送浏览器音频到 Clubdeck（简单直通模式）"""
+        """输出流回调 - 发送浏览器音频+MPV音乐到 Clubdeck"""
         if status:
             console.print(f"[yellow]输出状态: {status}[/yellow]")
         
@@ -445,40 +517,61 @@ class VBCableBridge:
         needed_browser_frames = int(frames * ratio)
         needed_stereo_samples = needed_browser_frames * self.browser_channels
         
-        # 从队列收集浏览器音频到缓冲区
-        while not self.output_queue.empty() and len(self.output_buffer) < needed_stereo_samples * 2:
-            try:
-                chunk = self.output_queue.get_nowait()
-                self.output_buffer = np.concatenate([self.output_buffer, chunk.flatten()])
-            except queue.Empty:
-                break
+        # 1. 从浏览器缓冲区读取音频
+        browser_buffer = np.array([], dtype=np.int16)
+        with self.browser_buffer_lock:
+            if len(self.browser_audio_buffer) >= needed_stereo_samples:
+                browser_buffer = self.browser_audio_buffer[:needed_stereo_samples]
+                self.browser_audio_buffer = self.browser_audio_buffer[needed_stereo_samples:]
+            elif len(self.browser_audio_buffer) > 0:
+                browser_buffer = self.browser_audio_buffer.copy()
+                self.browser_audio_buffer = np.array([], dtype=np.int16)
         
-        # 从缓冲区输出
-        if len(self.output_buffer) >= needed_stereo_samples:
-            stereo_data = self.output_buffer[:needed_stereo_samples]
-            self.output_buffer = self.output_buffer[needed_stereo_samples:]
-            
-            # 1. 先重采样到输出设备采样率
-            if self.browser_sample_rate != self.output_sample_rate:
-                stereo_data = self._resample_stereo(
-                    stereo_data, 
-                    self.browser_sample_rate, 
-                    self.output_sample_rate,
-                    self.browser_channels
-                )
-            
-            # 2. 转换为输出设备的声道数
-            output_data = self._convert_from_stereo(stereo_data.flatten(), self.output_channels)
-            
-            # 确保数据长度匹配
-            expected_samples = frames * self.output_channels
-            if len(output_data.flatten()) >= expected_samples:
-                outdata[:] = output_data.flatten()[:expected_samples].reshape(frames, self.output_channels)
-            else:
-                outdata[:len(output_data)] = output_data
-                outdata[len(output_data):] = 0
+        # 2. 从环形缓冲区读取MPV音频
+        mpv_buffer = self._read_from_mpv_ring_buffer(needed_stereo_samples)
+        
+        # 3. 混音：浏览器 100% + MPV 30%
+        if len(browser_buffer) > 0:
+            # 有浏览器音频，进行混音
+            min_len = min(len(browser_buffer), len(mpv_buffer))
+            mixed = browser_buffer[:min_len].astype(np.int32) + (mpv_buffer[:min_len].astype(np.int32) * 3 // 10)
+            stereo_data = np.clip(mixed, -32768, 32767).astype(np.int16)
+            # 补齐长度
+            if len(stereo_data) < needed_stereo_samples:
+                # 用剩余的MPV填充
+                remaining = needed_stereo_samples - len(stereo_data)
+                if len(mpv_buffer) > min_len:
+                    stereo_data = np.concatenate([stereo_data, mpv_buffer[min_len:min_len + remaining]])
+                else:
+                    stereo_data = np.concatenate([stereo_data, np.zeros(remaining, dtype=np.int16)])
         else:
-            outdata.fill(0)
+            # 没有浏览器音频，只播放MPV
+            stereo_data = mpv_buffer
+        
+        # 确保长度正确
+        if len(stereo_data) < needed_stereo_samples:
+            stereo_data = np.concatenate([stereo_data, np.zeros(needed_stereo_samples - len(stereo_data), dtype=np.int16)])
+        elif len(stereo_data) > needed_stereo_samples:
+            stereo_data = stereo_data[:needed_stereo_samples]
+        
+        # 4. 重采样和声道转换
+        if self.browser_sample_rate != self.output_sample_rate:
+            stereo_data = self._resample_stereo(
+                stereo_data, 
+                self.browser_sample_rate, 
+                self.output_sample_rate,
+                self.browser_channels
+            )
+        
+        output_data = self._convert_from_stereo(stereo_data.flatten(), self.output_channels)
+        
+        # 5. 输出
+        expected_samples = frames * self.output_channels
+        if len(output_data.flatten()) >= expected_samples:
+            outdata[:] = output_data.flatten()[:expected_samples].reshape(frames, self.output_channels)
+        else:
+            outdata[:len(output_data)] = output_data
+            outdata[len(output_data):] = 0
     
     def start(self) -> None:
         """启动音频桥接"""
@@ -626,19 +719,20 @@ class VBCableBridge:
         console.print("[yellow]音频桥接已停止[/yellow]")
     
     def send_to_clubdeck(self, audio_data: np.ndarray) -> None:
-        """发送浏览器麦克风到 Clubdeck（不在此处混音，由 _output_callback 统一处理）"""
+        """发送浏览器麦克风到 Clubdeck（写入缓冲区，由 _output_callback 消费）"""
         try:
-            # 转换为int16并直接放入输出队列
-            browser_audio = audio_data.astype(np.int16)
-            try:
-                self.output_queue.put_nowait(browser_audio.flatten())
-            except queue.Full:
-                # 队列满时丢弃最旧的
-                try:
-                    self.output_queue.get_nowait()
-                    self.output_queue.put_nowait(browser_audio.flatten())
-                except:
-                    pass
+            browser_audio = audio_data.astype(np.int16).flatten()
+            
+            with self.browser_buffer_lock:
+                # 追加到缓冲区
+                self.browser_audio_buffer = np.concatenate([self.browser_audio_buffer, browser_audio])
+                
+                # 限制缓冲区大小（最多0.3秒 = 48000*0.3*2 = 28800 samples）
+                max_size = 28800
+                if len(self.browser_audio_buffer) > max_size:
+                    # 丢弃旧数据，保留最新的
+                    self.browser_audio_buffer = self.browser_audio_buffer[-max_size:]
+                    
         except Exception as e:
             console.print(f"[dim red]send_to_clubdeck error: {e}[/dim red]")
     

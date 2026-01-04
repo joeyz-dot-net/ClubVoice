@@ -48,13 +48,14 @@ class WebSocketHandler:
         self.ducking_threshold = config.audio.ducking_threshold  # 音量阈值
         self.is_speaking = False      # 当前是否在说话
         self.speaking_decay = 0       # 说话状态衰减计数
-        self.speaking_decay_max = 30  # 衰减计数上限 (~300ms)
+        # 使用配置的release_time计算衰减上限 (约100帧/秒)
+        self.speaking_decay_max = int(config.audio.ducking_release_time * 100)
         self._ducking_lock = threading.Lock()
         
         # 平滑过渡参数
         self.current_volume = 1.0     # 当前音量系数 (0.0 ~ 1.0)
         self.target_volume = 1.0      # 目标音量系数
-        self.volume_smooth_speed = 0.08  # 音量变化速度 (每帧变化量，越小越平滑)
+        self.volume_smooth_speed = config.audio.ducking_transition_time  # 音量变化速度
         
         # 注册事件处理器
         self._register_handlers()
@@ -135,6 +136,8 @@ class WebSocketHandler:
                     if self.ducking_enabled:
                         with self._ducking_lock:
                             if max_amplitude > self.ducking_threshold:
+                                if not self.is_speaking:
+                                    console.print(f"[yellow]🔇 Ducking ON (amp={max_amplitude:.0f})[/yellow]")
                                 self.is_speaking = True
                                 self.speaking_decay = self.speaking_decay_max
                     
