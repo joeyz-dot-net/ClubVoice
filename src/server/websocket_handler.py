@@ -115,10 +115,21 @@ class WebSocketHandler:
                     audio_array = self.processor.base64_to_numpy(audio_base64)
                     max_amplitude = np.max(np.abs(audio_array))
                     
-                    # 调试：总是显示浏览器音频接收（每隔一段时间）
-                    import random
-                    if random.randint(1, 50) == 1:  # 1/50 概率显示
-                        console.print(f"[dim blue]Browser audio received: {max_amplitude} amplitude, {len(audio_array)} samples[/dim blue]")
+                    # 计算音量百分比（RMS）
+                    rms = np.sqrt(np.mean((audio_array.astype(np.float32) / 32768.0) ** 2))
+                    mic_volume = min(100.0, rms * 100.0 * 10.0)
+                    
+                    # 实时音量监控显示（每10帧显示一次）
+                    if not hasattr(self, '_frame_counter'):
+                        self._frame_counter = 0
+                    self._frame_counter += 1
+                    
+                    if self._frame_counter % 10 == 0:
+                        # 创建音量条
+                        bar_width = 20
+                        filled = int(mic_volume / 100.0 * bar_width)
+                        bar = '█' * filled + '░' * (bar_width - filled)
+                        console.print(f"[dim cyan]🎤 Mic: [{bar}] {mic_volume:5.1f}%[/dim cyan]", end='\r')
                     
                     # 检测是否在说话（用于 ducking）
                     if self.ducking_enabled:
@@ -126,8 +137,6 @@ class WebSocketHandler:
                             if max_amplitude > self.ducking_threshold:
                                 self.is_speaking = True
                                 self.speaking_decay = self.speaking_decay_max
-                                # 调试：显示检测到浏览器说话
-                                console.print(f"[dim blue]✔ 检测到浏览器说话: {max_amplitude} 幅度[/dim blue]")
                     
                     # 音频处理（降噪、滤波）
                     audio_array = self.processor.process_audio(audio_array)

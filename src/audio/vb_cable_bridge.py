@@ -2,6 +2,8 @@
 """
 VB-Cable 音频桥接器
 """
+import sys
+import time
 import threading
 import queue
 import numpy as np
@@ -95,6 +97,7 @@ class VBCableBridge:
         self.mixed_queue: queue.Queue = queue.Queue(maxsize=200)   # 混音后→浏览器
         self.output_queue: queue.Queue = queue.Queue(maxsize=200)  # 浏览器麦克风→Clubdeck
         self.mpv_for_clubdeck_queue: queue.Queue = queue.Queue(maxsize=200)  # MPV音乐副本 → Clubdeck
+        self.browser_audio_cache: queue.Queue = queue.Queue(maxsize=200)  # 浏览器麦克风缓存 → clubdeck混音线程
         
         # 状态
         self.running = False
@@ -107,6 +110,7 @@ class VBCableBridge:
         
         # 混音线程
         self.mixer_thread: Optional[threading.Thread] = None
+        self.clubdeck_output_thread: Optional[threading.Thread] = None  # 持续输出到 Clubdeck
         
         # 回调
         self.on_audio_received: Optional[Callable[[np.ndarray], None]] = None
@@ -156,7 +160,8 @@ class VBCableBridge:
         console.print(f"[dim]  Internal: {browser_channels}ch @ {browser_sample_rate}Hz[/dim]")
         console.print(f"[dim]  Chunk Size: {chunk_size} frames[/dim]")
         if mix_mode:
-            console.print(f"[yellow]* Mode: Dual-input mixing[/yellow]")
+            console.print(f"[yellow]* Mode: Dual-input mixing + MPV broadcast (3-Cable)[/yellow]")
+            console.print(f"[dim]  → Browser: Clubdeck + MPV | Clubdeck: Browser mic + MPV[/dim]")
         else:
             console.print(f"[yellow]* Mode: Single-direction receive (listen-only)[/yellow]")
     
@@ -354,8 +359,8 @@ class VBCableBridge:
         while self.running:
             try:
                 # 从两个输入队列获取数据
-                # audio1 = VB-Cable A (Clubdeck 房间语音)
-                # audio2 = VB-Cable B (音乐播放)
+                # audio1 = input_queue = MPV 音乐 (device 35, CABLE-B Output)
+                # audio2 = input_queue_2 = Clubdeck 房间 (device 34, CABLE Output)
                 audio1 = self.input_queue.get(timeout=0.05)
                 audio2 = self.input_queue_2.get(timeout=0.05)
                 
@@ -363,11 +368,11 @@ class VBCableBridge:
                 volume1 = self._calculate_volume(audio1.flatten())
                 volume2 = self._calculate_volume(audio2.flatten())
                 
-                # === 语音活动检测（针对 Clubdeck 语音）===
+                # === 语音活动检测（针对 Clubdeck 房间语音）===
                 has_voice = False
                 if self.ducking_enabled and self.voice_detector:
-                    # 检测 Clubdeck 房间中是否有人说话
-                    has_voice = self.voice_detector.detect(audio1.flatten())
+                    # 检测 Clubdeck 房间中是否有人说话 (audio2 = Clubdeck)
+                    has_voice = self.voice_detector.detect(audio2.flatten())
                     
                     # 根据检测结果控制 MPV 音量
                     if self.mpv_controller and self.mpv_controller.is_enabled():
@@ -407,8 +412,9 @@ class VBCableBridge:
                     from src.server.websocket_handler import get_connection_count
                     clients = get_connection_count()
                     
-                    # 单行显示（使用 \r 回到行首）- 简化显示，添加客户端数
-                    sys.stdout.write(f"\r音量 | CD: [{bar1}] {volume1:5.1f}% {voice_icon} | 音乐: [{bar2}] {volume2:5.1f}% | MPV: {mpv_vol:3d}% | 👤{clients}  ")
+                    # 单行显示（使用 \r 回到行首）- 人数、MPV 在前，方便监控
+                    # bar1/volume1=MPV音乐, bar2/volume2=Clubdeck房间
+                    sys.stdout.write(f"\r👤{clients} | MPV: {mpv_vol:3d}% | 音乐: [{bar1}] {volume1:5.1f}% | CD: [{bar2}] {volume2:5.1f}% {voice_icon}  ")
                     sys.stdout.flush()
                     
             except queue.Empty:
@@ -430,18 +436,17 @@ class VBCableBridge:
             console.print(f"[yellow]MPV 输入状态: {status}[/yellow]")
         
     def _output_callback(self, outdata: np.ndarray, frames: int, time_info, status):
-        """输出流回调 - 发送音频到 Clubdeck，处理采样率和声道转换"""
+        """输出流回调 - 发送浏览器音频到 Clubdeck（简单直通模式）"""
         if status:
             console.print(f"[yellow]输出状态: {status}[/yellow]")
         
-        # 计算需要的输出设备采样数（考虑采样率转换）
-        # 输出设备需要 frames 帧，对应浏览器端的采样数
+        # 计算需要的输出设备采样数
         ratio = self.browser_sample_rate / self.output_sample_rate
         needed_browser_frames = int(frames * ratio)
         needed_stereo_samples = needed_browser_frames * self.browser_channels
         
-        # 从队列收集数据到缓冲区（立体声、浏览器采样率格式）
-        while not self.output_queue.empty() and len(self.output_buffer) < needed_stereo_samples * 4:
+        # 从队列收集浏览器音频到缓冲区
+        while not self.output_queue.empty() and len(self.output_buffer) < needed_stereo_samples * 2:
             try:
                 chunk = self.output_queue.get_nowait()
                 self.output_buffer = np.concatenate([self.output_buffer, chunk.flatten()])
@@ -523,9 +528,12 @@ class VBCableBridge:
                 self.input_stream_2.start()
                 console.print(f"[dim]* Input stream 2 started: device {self.input_device_id_2}, {self.input_sample_rate_2}Hz, {self.input_channels_2}ch[/dim]")
                 
-                # 启动混音线程
+                # 启动混音线程（Clubdeck + MPV → 浏览器）
                 self.mixer_thread = threading.Thread(target=self._mixer_worker, daemon=True)
                 self.mixer_thread.start()
+                
+                # 注意：浏览器麦克风 + MPV → Clubdeck 的混音现在直接在 _output_callback 中完成
+                # 不再需要独立的 clubdeck_output_thread
             
             # 只在双向模式时启动输出流
             if self.output_device_id is not None:
@@ -538,7 +546,7 @@ class VBCableBridge:
                     callback=self._output_callback
                 )
                 self.output_stream.start()
-                console.print(f"[dim]* Output stream started: {self.output_sample_rate}Hz, {self.output_channels}ch[/dim]")
+                console.print(f"[green]* Output stream started: device {self.output_device_id}, {self.output_sample_rate}Hz, {self.output_channels}ch[/green]")
             else:
                 console.print(f"[dim]! Half-duplex mode: output stream not started[/dim]")
             
@@ -618,37 +626,89 @@ class VBCableBridge:
         console.print("[yellow]音频桥接已停止[/yellow]")
     
     def send_to_clubdeck(self, audio_data: np.ndarray) -> None:
-        """发送浏览器麦克风+MPV混音到 Clubdeck"""
+        """发送浏览器麦克风到 Clubdeck（不在此处混音，由 _output_callback 统一处理）"""
         try:
+            # 转换为int16并直接放入输出队列
             browser_audio = audio_data.astype(np.int16)
-            
-            # 尝试从MPV队列获取音频数据并混音
-            if self.mix_mode:
+            try:
+                self.output_queue.put_nowait(browser_audio.flatten())
+            except queue.Full:
+                # 队列满时丢弃最旧的
                 try:
-                    mpv_audio = self.mpv_for_clubdeck_queue.get_nowait()
-                    
-                    # 确保长度一致
-                    min_len = min(len(browser_audio), len(mpv_audio))
-                    browser_audio = browser_audio[:min_len]
-                    mpv_audio = mpv_audio[:min_len]
-                    
-                    # 混音：浏览器麦克风 + MPV音乐 (50% + 50%)
-                    mixed = (browser_audio.astype(np.int32) + mpv_audio.astype(np.int32)) // 2
-                    output_audio = mixed.astype(np.int16)
-                    
-                    # 低频调试输出
-                    if np.random.randint(0, 100) == 0:
-                        console.print("[dim green]Mixed: Browser mic + MPV → Clubdeck[/dim green]")
-                    
+                    self.output_queue.get_nowait()
+                    self.output_queue.put_nowait(browser_audio.flatten())
+                except:
+                    pass
+        except Exception as e:
+            console.print(f"[dim red]send_to_clubdeck error: {e}[/dim red]")
+    
+    def _clubdeck_output_worker(self):
+        """持续输出线程：混合浏览器麦克风+MPV音乐 → Clubdeck"""
+        console.print(f"[dim]* Clubdeck output thread started[/dim]")
+        
+        silence = np.zeros((512, 2), dtype=np.int16)  # 静音帧
+        
+        while self.running:
+            try:
+                # 1. 获取浏览器音频（按顺序，不丢弃）
+                browser_audio = None
+                try:
+                    # 非阻塞获取，但不清空队列
+                    browser_audio = self.browser_audio_cache.get(timeout=0.01)
                 except queue.Empty:
-                    # MPV队列为空，仅发送浏览器麦克风
-                    output_audio = browser_audio
-            else:
-                output_audio = browser_audio
-            
-            self.output_queue.put_nowait(output_audio)
-        except queue.Full:
-            pass
+                    pass
+                
+                # 如果没有浏览器音频，使用静音
+                if browser_audio is None:
+                    browser_audio = silence
+                
+                # 2. 获取 MPV 音频（非阻塞）
+                try:
+                    mpv_audio = self.mpv_for_clubdeck_queue.get(timeout=0.01)
+                except queue.Empty:
+                    # MPV 队列为空，只发送浏览器音频
+                    mpv_audio = silence
+                
+                # 3. 混音：浏览器麦克风 + MPV 音乐
+                # 统一为立体声格式 (frames, 2)
+                if browser_audio.ndim == 1:
+                    frames = len(browser_audio) // 2
+                    browser_stereo = browser_audio.reshape(frames, 2)
+                else:
+                    browser_stereo = browser_audio
+                
+                if mpv_audio.ndim == 1:
+                    frames = len(mpv_audio) // 2
+                    mpv_stereo = mpv_audio.reshape(frames, 2)
+                else:
+                    mpv_stereo = mpv_audio
+                
+                # 确保帧数一致
+                min_frames = min(len(browser_stereo), len(mpv_stereo))
+                browser_stereo = browser_stereo[:min_frames]
+                mpv_stereo = mpv_stereo[:min_frames]
+                
+                # 立体声混音：浏览器麦克风100%，MPV音乐30%（保持人声清晰）
+                mixed = browser_stereo.astype(np.int32) + (mpv_stereo.astype(np.int32) * 3 // 10)
+                output_audio = np.clip(mixed, -32768, 32767).astype(np.int16)
+                
+                # 4. 放入输出队列
+                try:
+                    self.output_queue.put(output_audio.flatten(), timeout=0.01)
+                except queue.Full:
+                    # 队列满时，移除最旧的一帧再放入（避免积压）
+                    try:
+                        self.output_queue.get_nowait()
+                        self.output_queue.put_nowait(output_audio.flatten())
+                    except:
+                        pass
+                    
+            except Exception as e:
+                if self.running:
+                    console.print(f"[red]Clubdeck output worker error: {e}[/red]")
+                    import traceback
+                    traceback.print_exc()
+                time.sleep(0.01)
     
     def receive_from_clubdeck(self, timeout: float = 0.1) -> Optional[np.ndarray]:
         """从 Clubdeck 接收音频 (混音后或单输入)"""
@@ -682,5 +742,12 @@ class VBCableBridge:
         while not self.mpv_for_clubdeck_queue.empty():
             try:
                 self.mpv_for_clubdeck_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        # 清理浏览器音频缓存队列
+        while not self.browser_audio_cache.empty():
+            try:
+                self.browser_audio_cache.get_nowait()
             except queue.Empty:
                 break
