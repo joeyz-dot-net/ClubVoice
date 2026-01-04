@@ -62,22 +62,31 @@ def main():
         bootstrap = Bootstrap()
         audio_config = bootstrap.run()
         
-        # 创建音频桥接器 - 支持单输入或双输入混音模式
+        # 创建音频桥接器 - 3-Cable架构: Clubdeck + MPV + Browser
         bridge = VBCableBridge(
-            input_device_id=audio_config.input_device_id,
-            output_device_id=audio_config.output_device_id,
+            mpv_input_device_id=audio_config.mpv_input_device_id,
+            clubdeck_input_device_id=audio_config.clubdeck_input_device_id,
+            browser_output_device_id=audio_config.browser_output_device_id,
             browser_sample_rate=audio_config.sample_rate,
-            input_sample_rate=audio_config.input_sample_rate,
-            output_sample_rate=audio_config.output_sample_rate,
-            input_channels=audio_config.input_channels,
-            output_channels=audio_config.output_channels,
+            mpv_sample_rate=audio_config.mpv_sample_rate,
+            clubdeck_sample_rate=audio_config.clubdeck_sample_rate,
+            browser_output_sample_rate=audio_config.browser_output_sample_rate,
+            mpv_channels=audio_config.mpv_channels,
+            clubdeck_channels=audio_config.clubdeck_channels,
+            browser_output_channels=audio_config.browser_output_channels,
             browser_channels=audio_config.channels,
             chunk_size=audio_config.chunk_size,
-            # 混音模式参数
             mix_mode=audio_config.mix_mode,
+            # 向后兼容旧字段（如果新字段为None则使用旧字段）
+            input_device_id=audio_config.input_device_id,
             input_device_id_2=audio_config.input_device_id_2,
+            output_device_id=audio_config.output_device_id,
+            input_sample_rate=audio_config.input_sample_rate,
             input_sample_rate_2=audio_config.input_sample_rate_2,
-            input_channels_2=audio_config.input_channels_2
+            output_sample_rate=audio_config.output_sample_rate,
+            input_channels=audio_config.input_channels,
+            input_channels_2=audio_config.input_channels_2,
+            output_channels=audio_config.output_channels
         )
         
         # 创建 Flask 应用

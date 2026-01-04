@@ -18,54 +18,89 @@ console = Console()
 
 
 class VBCableBridge:
-    """VB-Cable 音频桥接器 - 支持单/双输入混音模式"""
+    """VB-Cable 音频桥接器 - 3-Cable架构 (Clubdeck + MPV + Browser)"""
     
     def __init__(
         self,
-        input_device_id: int,
-        browser_sample_rate: int = 48000,  # 浏览器端采样率
-        input_sample_rate: int = 48000,    # 输入设备采样率
-        input_channels: int = 2,           # 输入设备声道数
-        browser_channels: int = 2,         # 浏览器端声道数
+        mpv_input_device_id: int,              # CABLE-B Output: MPV音乐输入
+        browser_sample_rate: int = 48000,       # 浏览器端采样率
+        mpv_sample_rate: int = 48000,          # MPV输入设备采样率
+        mpv_channels: int = 2,                  # MPV输入设备声道数
+        browser_channels: int = 2,              # 浏览器端声道数
         chunk_size: int = 512,
-        output_device_id: Optional[int] = None,  # 可选：保持向后兼容
+        browser_output_device_id: Optional[int] = None,  # CABLE-A Input: 浏览器麦克风→Clubdeck
+        browser_output_sample_rate: Optional[int] = None,
+        browser_output_channels: Optional[int] = None,
+        # 混音参数 - 3-Cable架构默认启用
+        clubdeck_input_device_id: Optional[int] = None,  # CABLE-C Output: Clubdeck房间输入
+        clubdeck_sample_rate: Optional[int] = None,      # Clubdeck设备采样率
+        clubdeck_channels: Optional[int] = None,         # Clubdeck设备声道数
+        mix_mode: bool = True,                            # 3-Cable架构默认开启混音
+        # 向后兼容（已废弃）
+        input_device_id: Optional[int] = None,
+        output_device_id: Optional[int] = None,
+        input_sample_rate: Optional[int] = None,
+        input_channels: Optional[int] = None,
         output_sample_rate: Optional[int] = None,
         output_channels: Optional[int] = None,
-        # 混音参数
-        input_device_id_2: Optional[int] = None,  # 第二个输入设备ID（混音模式）
-        input_sample_rate_2: Optional[int] = None,  # 第二个设备采样率
-        input_channels_2: Optional[int] = None,     # 第二个设备声道数
-        mix_mode: bool = False  # 是否启用混音模式
+        input_device_id_2: Optional[int] = None,
+        input_sample_rate_2: Optional[int] = None,
+        input_channels_2: Optional[int] = None
     ):
-        self.input_device_id = input_device_id
-        self.output_device_id = output_device_id  # 现在是可选的
+        """
+        初始化VB-Cable桥接器
+        
+        3-Cable架构说明:
+        - CABLE-A: 浏览器麦克风 → Clubdeck (browser_output_device_id)
+        - CABLE-B: MPV音乐 → Python (mpv_input_device_id)
+        - CABLE-C: Clubdeck房间 → Python (clubdeck_input_device_id)
+        
+        Python混音: CABLE-B (MPV) + CABLE-C (Clubdeck) → 浏览器
+        """
+        # === 新字段（3-Cable架构）===
+        self.mpv_input_device_id = mpv_input_device_id or input_device_id
+        self.clubdeck_input_device_id = clubdeck_input_device_id or input_device_id_2
+        self.browser_output_device_id = browser_output_device_id or output_device_id
+        
         self.browser_sample_rate = browser_sample_rate
-        self.input_sample_rate = input_sample_rate
-        self.output_sample_rate = output_sample_rate or browser_sample_rate
-        self.input_channels = input_channels
-        self.output_channels = output_channels or browser_channels
+        self.mpv_sample_rate = mpv_sample_rate or input_sample_rate or 48000
+        self.clubdeck_sample_rate = clubdeck_sample_rate or input_sample_rate_2 or 48000
+        self.browser_output_sample_rate = browser_output_sample_rate or output_sample_rate or browser_sample_rate
+        
+        self.mpv_channels = mpv_channels or input_channels or 2
+        self.clubdeck_channels = clubdeck_channels or input_channels_2 or 2
+        self.browser_output_channels = browser_output_channels or output_channels or browser_channels
         self.browser_channels = browser_channels
         self.chunk_size = chunk_size
         
-        # 混音模式配置
+        # === 向后兼容字段（已废弃，保留用于迁移）===
+        self.input_device_id = self.mpv_input_device_id
+        self.input_device_id_2 = self.clubdeck_input_device_id
+        self.output_device_id = self.browser_output_device_id
+        self.input_sample_rate = self.mpv_sample_rate
+        self.input_sample_rate_2 = self.clubdeck_sample_rate
+        self.output_sample_rate = self.browser_output_sample_rate
+        self.input_channels = self.mpv_channels
+        self.input_channels_2 = self.clubdeck_channels
+        self.output_channels = self.browser_output_channels
+        
+        # 混音模式配置（3-Cable架构默认开启）
         self.mix_mode = mix_mode
-        self.input_device_id_2 = input_device_id_2
-        self.input_sample_rate_2 = input_sample_rate_2 or input_sample_rate
-        self.input_channels_2 = input_channels_2 or input_channels
         
         self.processor = AudioProcessor(browser_sample_rate, browser_channels)
         
         # 音频队列
-        self.input_queue: queue.Queue = queue.Queue(maxsize=200)   # 从设备1接收
-        self.input_queue_2: queue.Queue = queue.Queue(maxsize=200) if mix_mode else None  # 从设备2接收
-        self.mixed_queue: queue.Queue = queue.Queue(maxsize=200)   # 混音后的输出队列
-        self.output_queue: queue.Queue = queue.Queue(maxsize=200)  # 发送到Clubdeck的队列
+        self.input_queue: queue.Queue = queue.Queue(maxsize=200)   # CABLE-B: MPV音乐 → mixer
+        self.input_queue_2: queue.Queue = queue.Queue(maxsize=200) if mix_mode else None  # CABLE-C: Clubdeck房间
+        self.mixed_queue: queue.Queue = queue.Queue(maxsize=200)   # 混音后→浏览器
+        self.output_queue: queue.Queue = queue.Queue(maxsize=200)  # 浏览器麦克风→Clubdeck
+        self.mpv_for_clubdeck_queue: queue.Queue = queue.Queue(maxsize=200)  # MPV音乐副本 → Clubdeck
         
         # 状态
         self.running = False
-        self.input_stream: Optional[sd.InputStream] = None
-        self.input_stream_2: Optional[sd.InputStream] = None  # 第二个输入流
-        self.output_stream: Optional[sd.OutputStream] = None  # 保留但可能不使用
+        self.input_stream: Optional[sd.InputStream] = None          # MPV音乐流
+        self.input_stream_2: Optional[sd.InputStream] = None        # Clubdeck房间流
+        self.output_stream: Optional[sd.OutputStream] = None        # 浏览器→Clubdeck流
         
         # 输出缓冲区
         self.output_buffer = np.zeros(0, dtype=np.int16)
@@ -82,9 +117,9 @@ class VBCableBridge:
         self.ducking_enabled = config.audio.mpv_ducking_enabled
         
         if self.ducking_enabled:
-            # 语音检测器（监测 VB-Cable A / Clubdeck 房间语音）
+            # 语音检测器（监测 CABLE-C / Clubdeck 房间语音）
             self.voice_detector = VoiceActivityDetector(
-                sample_rate=input_sample_rate,
+                sample_rate=self.clubdeck_sample_rate,
                 config=VoiceDetectionConfig(
                     threshold=config.audio.ducking_threshold,
                     min_duration=config.audio.ducking_min_duration,
@@ -98,7 +133,7 @@ class VBCableBridge:
             console.print(f"\n{'='*60}")
             console.print(f"[bold cyan]* Audio Ducking enabled[/bold cyan]")
             console.print(f"{'='*60}")
-            console.print(f"  Detection source: VB-Cable A (Clubdeck room audio)")
+            console.print(f"  Detection source: CABLE-C (Clubdeck room audio)")
             console.print(f"  Control target: MPV music player (via Named Pipe)")
             console.print(f"  Voice threshold: {config.audio.ducking_threshold}")
             console.print(f"  Normal volume: {config.mpv.normal_volume}%")
@@ -112,11 +147,13 @@ class VBCableBridge:
         # 调试计数器
         self._frame_count = 0
         
-        console.print(f"[dim]Audio bridge configuration:[/dim]")
-        console.print(f"[dim]  Input 1: {input_channels}ch @ {input_sample_rate}Hz (device {input_device_id})[/dim]")
-        if mix_mode and input_device_id_2 is not None:
-            console.print(f"[dim]  Input 2: {self.input_channels_2}ch @ {self.input_sample_rate_2}Hz (device {input_device_id_2})[/dim]")
-        console.print(f"[dim]  Browser: {browser_channels}ch @ {browser_sample_rate}Hz[/dim]")
+        console.print(f"[dim]3-Cable Audio Bridge Configuration:[/dim]")
+        console.print(f"[dim]  CABLE-B (MPV):    {self.mpv_channels}ch @ {self.mpv_sample_rate}Hz (device {self.mpv_input_device_id})[/dim]")
+        if mix_mode and self.clubdeck_input_device_id is not None:
+            console.print(f"[dim]  CABLE-C (Clubdeck): {self.clubdeck_channels}ch @ {self.clubdeck_sample_rate}Hz (device {self.clubdeck_input_device_id})[/dim]")
+        if self.browser_output_device_id is not None:
+            console.print(f"[dim]  CABLE-A (Browser):  {self.browser_output_channels}ch @ {self.browser_output_sample_rate}Hz (device {self.browser_output_device_id})[/dim]")
+        console.print(f"[dim]  Internal: {browser_channels}ch @ {browser_sample_rate}Hz[/dim]")
         console.print(f"[dim]  Chunk Size: {chunk_size} frames[/dim]")
         if mix_mode:
             console.print(f"[yellow]* Mode: Dual-input mixing[/yellow]")
@@ -235,10 +272,13 @@ class VBCableBridge:
                 self.browser_channels
             )
         
-        # 3. 放入对应队列
+        # 3. 放入对应队列（双路分发：mixer + send_to_clubdeck）
         try:
             if self.mix_mode:
+                # 副本1：给mixer用（Clubdeck + MPV → 浏览器）
                 self.input_queue.put_nowait(stereo_data)
+                # 副本2：给send_to_clubdeck用（浏览器麦克风 + MPV → Clubdeck）
+                self.mpv_for_clubdeck_queue.put_nowait(stereo_data.copy())
             else:
                 # 单输入模式：直接放入混音队列
                 self.mixed_queue.put_nowait(stereo_data)
@@ -578,9 +618,35 @@ class VBCableBridge:
         console.print("[yellow]音频桥接已停止[/yellow]")
     
     def send_to_clubdeck(self, audio_data: np.ndarray) -> None:
-        """发送浏览器音频到 Clubdeck"""
+        """发送浏览器麦克风+MPV混音到 Clubdeck"""
         try:
-            self.output_queue.put_nowait(audio_data.astype(np.int16))
+            browser_audio = audio_data.astype(np.int16)
+            
+            # 尝试从MPV队列获取音频数据并混音
+            if self.mix_mode:
+                try:
+                    mpv_audio = self.mpv_for_clubdeck_queue.get_nowait()
+                    
+                    # 确保长度一致
+                    min_len = min(len(browser_audio), len(mpv_audio))
+                    browser_audio = browser_audio[:min_len]
+                    mpv_audio = mpv_audio[:min_len]
+                    
+                    # 混音：浏览器麦克风 + MPV音乐 (50% + 50%)
+                    mixed = (browser_audio.astype(np.int32) + mpv_audio.astype(np.int32)) // 2
+                    output_audio = mixed.astype(np.int16)
+                    
+                    # 低频调试输出
+                    if np.random.randint(0, 100) == 0:
+                        console.print("[dim green]Mixed: Browser mic + MPV → Clubdeck[/dim green]")
+                    
+                except queue.Empty:
+                    # MPV队列为空，仅发送浏览器麦克风
+                    output_audio = browser_audio
+            else:
+                output_audio = browser_audio
+            
+            self.output_queue.put_nowait(output_audio)
         except queue.Full:
             pass
     
@@ -609,5 +675,12 @@ class VBCableBridge:
         while not self.mixed_queue.empty():
             try:
                 self.mixed_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        # 清理MPV副本队列
+        while not self.mpv_for_clubdeck_queue.empty():
+            try:
+                self.mpv_for_clubdeck_queue.get_nowait()
             except queue.Empty:
                 break

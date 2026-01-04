@@ -22,24 +22,42 @@ def get_config_path() -> Path:
 
 @dataclass
 class AudioConfig:
-    """音频配置"""
-    input_device_id: Optional[int] = None   # 第一个输入设备ID
-    output_device_id: Optional[int] = None  # Hi-Fi Cable Input (发送浏览器音频到 Clubdeck)
-    sample_rate: int = 48000                # 浏览器端采样率
-    input_sample_rate: int = 48000          # 输入设备1采样率
-    output_sample_rate: int = 48000         # 输出设备采样率
-    channels: int = 2                       # 浏览器端声道数（始终立体声）
-    input_channels: int = 2                 # 输入设备1声道数
-    output_channels: int = 2                # 输出设备声道数
-    chunk_size: int = 512                   # 减小缓冲区以降低延迟
+    """音频配置 - 3-Cable VB-Cable 架构"""
+    # === 3-Cable 架构设备配置 ===
+    # CABLE-C Output: Clubdeck 房间音频 → Python (读取)
+    clubdeck_input_device_id: Optional[int] = None
+    clubdeck_sample_rate: int = 48000
+    clubdeck_channels: int = 2
+    
+    # CABLE-B Output: MPV 音乐 → Python (读取)
+    mpv_input_device_id: Optional[int] = None
+    mpv_sample_rate: int = 48000
+    mpv_channels: int = 2
+    
+    # CABLE-A Input: 浏览器麦克风 → Clubdeck (写入)
+    browser_output_device_id: Optional[int] = None
+    browser_output_sample_rate: int = 48000
+    browser_output_channels: int = 2
+    
+    # === 旧字段名称 (向后兼容，已废弃) ===
+    input_device_id: Optional[int] = None   # 废弃: 使用 mpv_input_device_id
+    output_device_id: Optional[int] = None  # 废弃: 使用 browser_output_device_id
+    input_device_id_2: Optional[int] = None # 废弃: 使用 clubdeck_input_device_id
+    input_sample_rate: int = 48000          # 废弃: 使用 mpv_sample_rate
+    output_sample_rate: int = 48000         # 废弃: 使用 browser_output_sample_rate
+    input_channels: int = 2                 # 废弃: 使用 mpv_channels
+    output_channels: int = 2                # 废弃: 使用 browser_output_channels
+    input_sample_rate_2: int = 48000        # 废弃: 使用 clubdeck_sample_rate
+    input_channels_2: int = 2               # 废弃: 使用 clubdeck_channels
+    
+    # === 通用配置 ===
+    sample_rate: int = 48000                # Python 内部处理采样率
+    channels: int = 2                       # Python 内部处理声道数
+    chunk_size: int = 512                   # 缓冲区大小
     bitrate: int = 128000                   # 128kbps
     dtype: str = 'int16'                    # 数据类型
-    duplex_mode: str = 'half'               # 通信模式: 'half' = 半双工, 'full' = 全双工
-    # 混音模式参数
-    mix_mode: bool = False                  # 是否启用混音模式
-    input_device_id_2: Optional[int] = None # 第二个输入设备ID
-    input_sample_rate_2: int = 48000        # 输入设备2采样率
-    input_channels_2: int = 2               # 输入设备2声道数
+    duplex_mode: str = 'full'               # 通信模式: 'half' = 半双工, 'full' = 全双工
+    mix_mode: bool = True                   # 是否启用混音模式 (3-Cable 架构默认开启)
     
     # 音频闪避配置
     mpv_ducking_enabled: bool = True        # Clubdeck 房间语音降低 MPV 音乐音量
@@ -107,30 +125,62 @@ class AppConfig:
             
             # 加载音频通信模式和设备ID
             if 'audio' in parser:
-                self.audio.duplex_mode = parser.get('audio', 'duplex_mode', fallback='half')
-                input_device_id = parser.get('audio', 'input_device_id', fallback=None)
-                if input_device_id is not None:
+                self.audio.duplex_mode = parser.get('audio', 'duplex_mode', fallback='full')
+                self.audio.mix_mode = parser.getboolean('audio', 'mix_mode', fallback=True)
+                
+                # === 读取新的 3-Cable 配置 ===
+                clubdeck_id = parser.get('audio', 'clubdeck_input_device_id', fallback=None)
+                if clubdeck_id is not None:
                     try:
-                        self.audio.input_device_id = int(input_device_id)
+                        self.audio.clubdeck_input_device_id = int(clubdeck_id)
                     except ValueError:
                         pass
                 
-                # 添加 output_device_id 读取
-                output_device_id = parser.get('audio', 'output_device_id', fallback=None)
-                if output_device_id is not None:
+                mpv_id = parser.get('audio', 'mpv_input_device_id', fallback=None)
+                if mpv_id is not None:
                     try:
-                        self.audio.output_device_id = int(output_device_id)
+                        self.audio.mpv_input_device_id = int(mpv_id)
                     except ValueError:
                         pass
                 
-                # 加载混音配置
-                self.audio.mix_mode = parser.getboolean('audio', 'mix_mode', fallback=False)
-                input_device_id_2 = parser.get('audio', 'input_device_id_2', fallback=None)
-                if input_device_id_2 is not None:
+                browser_out_id = parser.get('audio', 'browser_output_device_id', fallback=None)
+                if browser_out_id is not None:
                     try:
-                        self.audio.input_device_id_2 = int(input_device_id_2)
+                        self.audio.browser_output_device_id = int(browser_out_id)
                     except ValueError:
                         pass
+                
+                # === 向后兼容：读取旧的 2-Cable 配置并自动迁移 ===
+                # 如果新配置不存在，尝试从旧配置迁移
+                if self.audio.clubdeck_input_device_id is None:
+                    input_device_id_2 = parser.get('audio', 'input_device_id_2', fallback=None)
+                    if input_device_id_2 is not None:
+                        try:
+                            self.audio.clubdeck_input_device_id = int(input_device_id_2)
+                            self.audio.input_device_id_2 = int(input_device_id_2)  # 保持兼容
+                            print(f"[迁移] input_device_id_2 ({input_device_id_2}) → clubdeck_input_device_id")
+                        except ValueError:
+                            pass
+                
+                if self.audio.mpv_input_device_id is None:
+                    input_device_id = parser.get('audio', 'input_device_id', fallback=None)
+                    if input_device_id is not None:
+                        try:
+                            self.audio.mpv_input_device_id = int(input_device_id)
+                            self.audio.input_device_id = int(input_device_id)  # 保持兼容
+                            print(f"[迁移] input_device_id ({input_device_id}) → mpv_input_device_id")
+                        except ValueError:
+                            pass
+                
+                if self.audio.browser_output_device_id is None:
+                    output_device_id = parser.get('audio', 'output_device_id', fallback=None)
+                    if output_device_id is not None:
+                        try:
+                            self.audio.browser_output_device_id = int(output_device_id)
+                            self.audio.output_device_id = int(output_device_id)  # 保持兼容
+                            print(f"[迁移] output_device_id ({output_device_id}) → browser_output_device_id")
+                        except ValueError:
+                            pass
                 
                 # 加载音频闪避配置
                 # 向后兼容：先尝试读取新的配置项，如果不存在则使用旧的 ducking_enabled
@@ -208,13 +258,20 @@ class AppConfig:
             'ducking_release_time': str(self.audio.ducking_release_time),
             'ducking_transition_time': str(self.audio.ducking_transition_time)
         }
+        
+        # 保存新的 3-Cable 配置字段（优先）
+        if self.audio.clubdeck_input_device_id is not None:
+            audio_section['clubdeck_input_device_id'] = str(self.audio.clubdeck_input_device_id)
+        if self.audio.mpv_input_device_id is not None:
+            audio_section['mpv_input_device_id'] = str(self.audio.mpv_input_device_id)
+        if self.audio.browser_output_device_id is not None:
+            audio_section['browser_output_device_id'] = str(self.audio.browser_output_device_id)
+        
+        # 向后兼容：同时保存旧字段名（如果新字段不存在则使用旧字段）
         if self.audio.input_device_id is not None:
             audio_section['input_device_id'] = str(self.audio.input_device_id)
-        
-        # 添加 output_device_id 保存
         if self.audio.output_device_id is not None:
             audio_section['output_device_id'] = str(self.audio.output_device_id)
-            
         if self.audio.input_device_id_2 is not None:
             audio_section['input_device_id_2'] = str(self.audio.input_device_id_2)
         

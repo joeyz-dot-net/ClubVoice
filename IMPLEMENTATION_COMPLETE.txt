@@ -1,0 +1,68 @@
+﻿
+ 三设备架构实施完成！
+
+
+代码修改:
+   添加 mpv_for_clubdeck_queue (MPV双路分发队列)
+   修改 _input_callback() (MPV数据复制两份)
+   修改 send_to_clubdeck() (浏览器麦克风 + MPV混音)
+   修改 clear_queues() (清理新队列)
+
+配置修改:
+   clubdeck_input_device_id = 34 (CABLE Output)
+   mpv_input_device_id = 35 (CABLE-B Output)
+   browser_output_device_id = 28 (CABLE-A Input)
+
+
+ Clubdeck 音频设置（重要！）
+
+
+请在 Clubdeck 中设置:
+
+   扬声器输出设备 = CABLE Input (VB-Audio Virtual Cable)
+   麦克风输入设备 = CABLE-A Output (VB-Audio Virtual Cable A)
+
+
+ MPV 播放器设置
+
+
+播放命令:
+  mpv --audio-device=wasapi/{07A793AB-65F7-4824-B9F2-96ED5652BEFC} music.mp3
+
+或使用设备名:
+  mpv --audio-device=wasapi/CABLE-B music.mp3
+
+
+ 音频流向
+
+
+浏览器听到:
+   Clubdeck房间音频 (CABLE Output, 设备34)
+   MPV音乐 (CABLE-B Output, 设备35)
+   不含浏览器自己的回声
+
+Clubdeck听到:
+   浏览器麦克风 (CABLE-A Input, 设备28)
+   MPV音乐 (Python内存双路分发)
+   不含Clubdeck自己的房间声音
+
+MPV数据流:
+  CABLE-B Output  Python读取  内存复制两份
+    副本1  混音给浏览器 (Clubdeck + MPV)
+    副本2  混音给Clubdeck (浏览器麦克风 + MPV)
+
+
+ 启动测试
+
+
+1. 修改Clubdeck音频设置（见上方）
+2. 重启程序: python run.py
+3. 打开浏览器: http://localhost:5000
+4. 开启麦克风说话
+5. 播放MPV音乐
+
+预期效果:
+  - 浏览器听到Clubdeck房间+MPV，无回声 
+  - Clubdeck听到浏览器+MPV 
+
+
